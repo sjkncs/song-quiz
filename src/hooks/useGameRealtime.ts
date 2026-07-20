@@ -18,11 +18,13 @@ interface UseGameRealtimeOptions {
 export function useGameRealtime(options: UseGameRealtimeOptions) {
   const { roomId, onBroadcast, onRoomUpdate, onPlayerUpdate, onRoundUpdate } = options;
   const supabase = useRef(createClient());
+  const broadcastChannelRef = useRef<ReturnType<typeof supabase.current.channel> | null>(null);
   const [connected, setConnected] = useState(false);
 
   // 订阅 Broadcast 频道
   useEffect(() => {
     const channel = supabase.current.channel(`game:${roomId}`);
+    broadcastChannelRef.current = channel;
 
     channel.on('broadcast', { event: 'game_event' }, ({ payload }) => {
       const msg = payload as unknown as GameBroadcast;
@@ -35,6 +37,7 @@ export function useGameRealtime(options: UseGameRealtimeOptions) {
 
     return () => {
       supabase.current.removeChannel(channel);
+      broadcastChannelRef.current = null;
     };
   }, [roomId]);
 
@@ -88,15 +91,18 @@ export function useGameRealtime(options: UseGameRealtimeOptions) {
     };
   }, [roomId]);
 
-  // 发送广播消息
-  const broadcast = useCallback(async (msg: GameBroadcast) => {
-    const channel = supabase.current.channel(`game:${roomId}`);
-    await channel.send({
+  // 发送广播消息（使用已订阅的频道）
+  const broadcast = useCallback(async (msg: Omit<GameBroadcast, 'timestamp'>) => {
+    if (!broadcastChannelRef.current) {
+      console.warn('Broadcast channel not ready');
+      return;
+    }
+    await broadcastChannelRef.current.send({
       type: 'broadcast',
       event: 'game_event',
-      payload: msg,
+      payload: { ...msg, timestamp: Date.now() },
     });
-  }, [roomId]);
+  }, []);
 
   return { broadcast, connected };
 }

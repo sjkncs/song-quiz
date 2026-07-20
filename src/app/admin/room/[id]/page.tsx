@@ -61,7 +61,7 @@ export default function AdminRoomPage() {
   }, [roomId]);
 
   // 实时同步
-  useGameRealtime({
+  const { broadcast } = useGameRealtime({
     roomId,
     onRoomUpdate: useCallback((r: GameRoom) => setRoom(r), []),
     onPlayerUpdate: useCallback((p: GamePlayer[]) => setPlayers(p), []),
@@ -92,15 +92,26 @@ export default function AdminRoomPage() {
     setActionLoading(true);
     try {
       await updateRoomStatus(roomId, 'starting');
+      // 通知玩家游戏即将开始
+      await broadcast({ type: 'game_start', payload: {} });
+
       // 准备第一题
       if (questions.length > 0) {
         const q = questions[0];
         const round = await createRound(roomId, 1, q.id, room?.config.time_per_question_sec || 30);
         await updateCurrentRound(roomId, 1);
         await startRound(round.id);
-        setCurrentRound({ ...round, question: q });
+        const roundWithQuestion = { ...round, question: q };
+        setCurrentRound(roundWithQuestion);
+
         // 切换到 playing 状态让玩家能看到题目
         await updateRoomStatus(roomId, 'playing');
+
+        // 广播第一题开始
+        await broadcast({
+          type: 'round_start',
+          payload: { round_number: 1, round: roundWithQuestion },
+        });
       }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '操作失败');
@@ -122,13 +133,24 @@ export default function AdminRoomPage() {
       // 完成当前回合
       if (currentRound) {
         await completeRound(currentRound.id);
+        await broadcast({
+          type: 'round_complete',
+          payload: { round_id: currentRound.id },
+        });
       }
       const q = questions[nextNum - 1];
       const round = await createRound(roomId, nextNum, q.id, room.config.time_per_question_sec || 30);
       await updateCurrentRound(roomId, nextNum);
       await startRound(round.id);
-      setCurrentRound({ ...round, question: q });
+      const roundWithQuestion = { ...round, question: q };
+      setCurrentRound(roundWithQuestion);
       setAnswers([]);
+
+      // 广播新一轮开始
+      await broadcast({
+        type: 'round_start',
+        payload: { round_number: nextNum, round: roundWithQuestion },
+      });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '操作失败');
     }
@@ -140,6 +162,11 @@ export default function AdminRoomPage() {
     setActionLoading(true);
     try {
       await revealRound(currentRound.id);
+      // 广播答案揭晓
+      await broadcast({
+        type: 'round_reveal',
+        payload: { round_id: currentRound.id },
+      });
       // 刷新排名
       const p = await getPlayers(roomId);
       setPlayers(p);
@@ -155,6 +182,8 @@ export default function AdminRoomPage() {
       if (currentRound) await completeRound(currentRound.id);
       await adminGenerateRankings(roomId);
       await updateRoomStatus(roomId, 'finished');
+      // 广播游戏结束
+      await broadcast({ type: 'game_finish', payload: {} });
       const r = await getRankings(roomId);
       setRankings(r);
     } catch (e: unknown) {

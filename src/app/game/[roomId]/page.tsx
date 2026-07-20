@@ -78,7 +78,7 @@ export default function GamePage() {
   }, [roomCode]);
 
   // 实时同步
-  useGameRealtime({
+  const { broadcast } = useGameRealtime({
     roomId: room?.id || '',
     onBroadcast: useCallback((msg: GameBroadcast) => {
       switch (msg.type) {
@@ -187,6 +187,12 @@ export default function GamePage() {
         antiCheat.screenSwitches
       );
       setMyAnswer(answer);
+
+      // 广播已答题通知管理端
+      await broadcast({
+        type: 'player_answer',
+        payload: { player_id: player.id, round_id: currentRound.id },
+      });
 
       // 显示激励/警告消息
       if (answer.is_correct) {
