@@ -20,6 +20,10 @@
 # production
 /build
 
+# static assets (served from Supabase CDN)
+/public/audio/
+/public/covers/
+
 # misc
 .DS_Store
 *.pem
