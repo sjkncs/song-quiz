@@ -99,6 +99,8 @@ export default function AdminRoomPage() {
         await updateCurrentRound(roomId, 1);
         await startRound(round.id);
         setCurrentRound({ ...round, question: q });
+        // 切换到 playing 状态让玩家能看到题目
+        await updateRoomStatus(roomId, 'playing');
       }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '操作失败');
