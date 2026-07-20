@@ -281,18 +281,21 @@ export function QuizCard({ song, options, correctIndex, mode, onAnswer }: Props)
                 <p className="text-xs text-slate-400 italic leading-relaxed whitespace-pre-line line-clamp-3">{song.lyrics}</p>
               </div>
             )}
-            {/* Video section — direct embed or search link */}
+            {/* Video section — direct embed (YouTube/Bilibili) or search link */}
             {song.video_url && (() => {
-              const isEmbed = song.video_url.includes('/embed/')
+              const isYoutubeEmbed = song.video_url.includes('/embed/')
+              const isBilibiliEmbed = song.video_url.includes('player.bilibili.com')
+              const isEmbed = isYoutubeEmbed || isBilibiliEmbed
               if (isEmbed) {
                 return (
                   <div className="mt-3 rounded-xl overflow-hidden border border-white/10">
                     <iframe
-                      src={`${song.video_url}?autoplay=1&mute=1&rel=0&modestbranding=1`}
+                      src={song.video_url}
                       title={`${song.title} - ${song.artist} 演唱视频`}
                       className="w-full aspect-video"
                       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                       allowFullScreen
+                      sandbox="allow-scripts allow-same-origin allow-popups"
                     />
                   </div>
                 )
