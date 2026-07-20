@@ -1,0 +1,714 @@
+'use client';
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import {
+  getRoomByCode, getMyPlayer, getPlayers, joinRoom,
+  submitAnswer, getRankings, getCurrentRound
+} from '@/app/game-actions';
+import { useGameRealtime, useAntiCheat, useCountdown, useAnswerTimer } from '@/hooks/useGameRealtime';
+import type {
+  GameRoom, GamePlayer, GameQuestion, GameRound,
+  GameAnswer, GameRanking, GroupLabel, GameBroadcast
+} from '@/types/game';
+import GameAssistant from '@/components/GameAssistant';
+
+type Phase = 'join' | 'waiting' | 'playing' | 'revealed' | 'finished';
+
+export default function GamePage() {
+  const params = useParams();
+  const router = useRouter();
+  const roomCode = params.roomId as string;
+
+  // 状态
+  const [phase, setPhase] = useState<Phase>('join');
+  const [room, setRoom] = useState<GameRoom | null>(null);
+  const [player, setPlayer] = useState<GamePlayer | null>(null);
+  const [players, setPlayers] = useState<GamePlayer[]>([]);
+  const [currentRound, setCurrentRound] = useState<(GameRound & { question?: GameQuestion }) | null>(null);
+  const [myAnswer, setMyAnswer] = useState<GameAnswer | null>(null);
+  const [rankings, setRankings] = useState<GameRanking[]>([]);
+  const [selectedOption, setSelectedOption] = useState<number | null>(null);
+  const [freeText, setFreeText] = useState('');
+  const [hasSubmitted, setHasSubmitted] = useState(false);
+  const [streakMsg, setStreakMsg] = useState('');
+  const [warningMsg, setWarningMsg] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  // 加入表单
+  const [realName, setRealName] = useState('');
+  const [nickname, setNickname] = useState('');
+  const [group, setGroup] = useState<GroupLabel>('A');
+
+  // 反作弊
+  const antiCheat = useAntiCheat();
+  const answerTimer = useAnswerTimer();
+  const timerActive = phase === 'playing' && !hasSubmitted;
+  const timeRemaining = useCountdown(
+    currentRound?.time_limit_sec || 30,
+    timerActive
+  );
+
+  // 加载房间信息
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await getRoomByCode(roomCode);
+        setRoom(r);
+        if (r.status === 'finished') setPhase('finished');
+        else if (r.status === 'playing') setPhase('playing');
+
+        // 尝试获取当前玩家
+        const me = await getMyPlayer(r.id);
+        if (me) {
+          setPlayer(me);
+          const allPlayers = await getPlayers(r.id);
+          setPlayers(allPlayers);
+          if (r.status === 'playing' || r.status === 'starting') {
+            setPhase(r.status === 'starting' ? 'waiting' : 'playing');
+            const round = await getCurrentRound(r.id);
+            if (round) setCurrentRound(round);
+          }
+        }
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : '房间不存在');
+      }
+    })();
+  }, [roomCode]);
+
+  // 实时同步
+  useGameRealtime({
+    roomId: room?.id || '',
+    onBroadcast: useCallback((msg: GameBroadcast) => {
+      switch (msg.type) {
+        case 'round_start':
+          setPhase('playing');
+          setHasSubmitted(false);
+          setSelectedOption(null);
+          setFreeText('');
+          setMyAnswer(null);
+          setStreakMsg('');
+          setWarningMsg('');
+          antiCheat.reset();
+          answerTimer.start();
+          if (msg.payload.round) {
+            setCurrentRound(msg.payload.round as GameRound & { question?: GameQuestion });
+          }
+          break;
+        case 'round_reveal':
+          setPhase('revealed');
+          break;
+        case 'round_complete':
+          // 刷新排名
+          if (room) {
+            getRankings(room.id).then(setRankings).catch(() => {});
+            getPlayers(room.id).then(setPlayers).catch(() => {});
+          }
+          break;
+        case 'game_finish':
+          setPhase('finished');
+          if (room) {
+            getRankings(room.id).then(setRankings).catch(() => {});
+          }
+          break;
+        case 'game_start':
+          setPhase('waiting');
+          break;
+      }
+    }, [room, antiCheat, answerTimer]),
+    onRoomUpdate: useCallback((r: GameRoom) => {
+      setRoom(r);
+      if (r.status === 'finished') setPhase('finished');
+      if (r.status === 'starting') setPhase('waiting');
+    }, []),
+    onPlayerUpdate: useCallback((p: GamePlayer[]) => {
+      setPlayers(p);
+    }, []),
+    onRoundUpdate: useCallback((round: GameRound & { question?: GameQuestion }) => {
+      setCurrentRound(round);
+      if (round.status === 'revealed') setPhase('revealed');
+      if (round.status === 'completed') {
+        // 准备下一题
+        setHasSubmitted(false);
+        setSelectedOption(null);
+        setFreeText('');
+        setMyAnswer(null);
+        setStreakMsg('');
+        setWarningMsg('');
+        antiCheat.reset();
+      }
+    }, [antiCheat]),
+  });
+
+  // 加入房间
+  const handleJoin = async () => {
+    if (!room || !nickname.trim() || !realName.trim()) {
+      setError('请填写完整信息');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const p = await joinRoom(room.id, realName.trim(), nickname.trim(), group);
+      setPlayer(p);
+      sessionStorage.setItem('nickname', nickname.trim());
+      const allPlayers = await getPlayers(room.id);
+      setPlayers(allPlayers);
+      setPhase('waiting');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '加入失败');
+    }
+    setLoading(false);
+  };
+
+  // 提交答案
+  const handleSubmitAnswer = async () => {
+    if (!currentRound || !player || !room || hasSubmitted) return;
+
+    const question = currentRound.question;
+    if (!question) return;
+
+    const isFreeText = !question.options || question.options.length === 0;
+    if (isFreeText && !freeText.trim()) return;
+    if (!isFreeText && selectedOption === null) return;
+
+    setHasSubmitted(true);
+    const timeTaken = answerTimer.getElapsed();
+
+    try {
+      const answer = await submitAnswer(
+        currentRound.id,
+        player.id,
+        room.id,
+        selectedOption ?? -1,
+        isFreeText ? freeText.trim() : (question.options?.[selectedOption!]?.text || ''),
+        timeTaken,
+        antiCheat.screenSwitches
+      );
+      setMyAnswer(answer);
+
+      // 显示激励/警告消息
+      if (answer.is_correct) {
+        const correctCount = (player.correct_count || 0) + 1;
+        const streak = (player.streak || 0) + 1;
+        if (streak >= 3) {
+          const totalBelow = players.filter(p => p.score < player.score + 100).length;
+          const pct = Math.round((totalBelow / Math.max(players.length, 1)) * 100);
+          setStreakMsg(`真棒！连续${streak}题正确，你已超过${pct}%的挑战者`);
+        }
+      }
+      if (answer.is_correct === false) {
+        const wrongCount = (player.wrong_count || 0) + 1;
+        if (wrongCount >= 2) {
+          setWarningMsg(`注意！你已答错${wrongCount}次，需要调整状态哦`);
+        }
+      }
+    } catch (e: unknown) {
+      setHasSubmitted(false);
+      setError(e instanceof Error ? e.message : '提交失败');
+    }
+  };
+
+  // 时间到自动提交
+  useEffect(() => {
+    if (timeRemaining === 0 && phase === 'playing' && !hasSubmitted) {
+      handleSubmitAnswer();
+    }
+  }, [timeRemaining]);
+
+  // ============================================================
+  // 渲染各阶段
+  // ============================================================
+
+  if (error && !room) {
+    return (
+      <main className="min-h-[100dvh] flex items-center justify-center px-6">
+        <div className="glass-card p-8 text-center max-w-sm w-full">
+          <div className="text-5xl mb-4">&#x2753;</div>
+          <h2 className="text-xl font-bold mb-2">房间未找到</h2>
+          <p className="text-[var(--text-secondary)] text-sm mb-6">{error}</p>
+          <button onClick={() => router.push('/')} className="btn-primary">返回首页</button>
+        </div>
+      </main>
+    );
+  }
+
+  // 加入阶段
+  if (phase === 'join') {
+    return (
+      <main className="min-h-[100dvh] flex flex-col items-center justify-center px-6 py-12">
+        <div className="glass-card w-full max-w-sm p-6 space-y-5 animate-slideUp">
+          <div className="text-center mb-2">
+            <h2 className="text-2xl font-bold">加入游戏</h2>
+            <p className="text-sm text-[var(--text-secondary)] mt-1">
+              房间码: <span className="font-mono text-lg text-blue-400">{roomCode}</span>
+            </p>
+          </div>
+
+          <div>
+            <label className="text-xs text-[var(--text-secondary)] mb-1.5 block">真实姓名（仅管理员可见）</label>
+            <input className="input-field" placeholder="你的真实姓名" value={realName} onChange={(e) => setRealName(e.target.value)} maxLength={20}/>
+          </div>
+
+          <div>
+            <label className="text-xs text-[var(--text-secondary)] mb-1.5 block">昵称（排行榜显示）</label>
+            <input className="input-field" placeholder="显示在排行榜的昵称" value={nickname} onChange={(e) => setNickname(e.target.value)} maxLength={20}/>
+          </div>
+
+          <div>
+            <label className="text-xs text-[var(--text-secondary)] mb-1.5 block">选择组别</label>
+            <div className="flex gap-3">
+              {(['A', 'B'] as GroupLabel[]).map((g) => (
+                <button
+                  key={g}
+                  onClick={() => setGroup(g)}
+                  className={`flex-1 py-4 rounded-xl font-bold text-lg transition-all border-2 ${
+                    group === g
+                      ? g === 'A'
+                        ? 'border-blue-500 bg-blue-500/15 text-blue-400'
+                        : 'border-yellow-500 bg-yellow-500/15 text-yellow-400'
+                      : 'border-[var(--glass-border)] text-[var(--text-secondary)]'
+                  }`}
+                >
+                  {g}组
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {error && <p className="text-sm text-red-400 text-center">{error}</p>}
+
+          <button onClick={handleJoin} disabled={loading} className="btn-primary">
+            {loading ? '加入中...' : '确认加入'}
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  // 等待阶段
+  if (phase === 'waiting') {
+    const groupA = players.filter(p => p.group_label === 'A');
+    const groupB = players.filter(p => p.group_label === 'B');
+
+    return (
+      <main className="min-h-[100dvh] px-4 py-8 max-w-lg mx-auto">
+        <div className="text-center mb-8 animate-fadeIn">
+          <h2 className="text-2xl font-bold">等待开始</h2>
+          <p className="text-sm text-[var(--text-secondary)] mt-1">
+            等待主持人开始游戏...
+          </p>
+          {room && (
+            <p className="text-xs text-[var(--text-secondary)] mt-2">
+              房间码: <span className="font-mono text-blue-400">{room.room_code}</span>
+            </p>
+          )}
+        </div>
+
+        {/* 两组玩家列表 */}
+        <div className="grid grid-cols-2 gap-4 mb-8">
+          <div className="glass-card-sm p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="group-badge group-a">A</span>
+              <span className="font-semibold text-blue-400">A组 ({groupA.length}人)</span>
+            </div>
+            <div className="space-y-2">
+              {groupA.map(p => (
+                <div key={p.id} className="text-sm flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-green-400"></span>
+                  <span className="truncate">{p.nickname}</span>
+                  {p.id === player?.id && <span className="text-xs text-blue-400">(你)</span>}
+                </div>
+              ))}
+              {groupA.length === 0 && <p className="text-xs text-[var(--text-secondary)]">暂无玩家</p>}
+            </div>
+          </div>
+
+          <div className="glass-card-sm p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="group-badge group-b">B</span>
+              <span className="font-semibold text-yellow-400">B组 ({groupB.length}人)</span>
+            </div>
+            <div className="space-y-2">
+              {groupB.map(p => (
+                <div key={p.id} className="text-sm flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-green-400"></span>
+                  <span className="truncate">{p.nickname}</span>
+                  {p.id === player?.id && <span className="text-xs text-yellow-400">(你)</span>}
+                </div>
+              ))}
+              {groupB.length === 0 && <p className="text-xs text-[var(--text-secondary)]">暂无玩家</p>}
+            </div>
+          </div>
+        </div>
+
+        <div className="text-center">
+          <div className="animate-pulse-soft inline-flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+            <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>
+            等待主持人开始...
+          </div>
+        </div>
+        <GameAssistant roomId={room?.id} playerId={player?.id} mode="player" />
+      </main>
+    );
+  }
+
+  // 答题阶段
+  if (phase === 'playing' && currentRound?.question) {
+    const q = currentRound.question;
+    const hasOptions = q.options && q.options.length > 0;
+    const isBonus = q.is_bonus || q.difficulty === 'bonus';
+    const timerPct = timeRemaining / (currentRound.time_limit_sec || 30);
+    const circumference = 2 * Math.PI * 35;
+    const offset = circumference * (1 - timerPct);
+
+    return (
+      <main className="min-h-[100dvh] px-4 py-6 max-w-lg mx-auto">
+        {/* 顶部信息栏 */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <span className={`group-badge group-${(player?.group_label || 'a').toLowerCase()}`}>
+              {player?.group_label}
+            </span>
+            <div>
+              <p className="text-xs text-[var(--text-secondary)]">第 {currentRound.round_number} 题</p>
+              <p className="text-sm font-semibold">{player?.nickname}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <p className="text-xs text-[var(--text-secondary)]">积分</p>
+              <p className="text-lg font-bold text-blue-400">{player?.score || 0}</p>
+            </div>
+            {/* 计时器 */}
+            <div className="timer-ring">
+              <svg width="80" height="80" viewBox="0 0 80 80">
+                <circle className="bg" cx="40" cy="40" r="35"/>
+                <circle
+                  className={`fg ${timeRemaining <= 5 ? 'danger' : timeRemaining <= 10 ? 'warning' : ''}`}
+                  cx="40" cy="40" r="35"
+                  strokeDasharray={circumference}
+                  strokeDashoffset={offset}
+                />
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className={`text-xl font-bold ${timeRemaining <= 5 ? 'text-red-400' : ''}`}>
+                  {timeRemaining}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 彩蛋/难度提示 */}
+        {isBonus && (
+          <div className="bonus-bubble mb-4 animate-fadeIn">
+            {q.bonus_message || '本题较难，答对可额外获得周边奖励！'}
+          </div>
+        )}
+
+        {/* 切屏警告 */}
+        {antiCheat.screenSwitches > 0 && (
+          <div className="mb-4 flex items-center gap-2">
+            <span className="yellow-card">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+              </svg>
+              切屏{antiCheat.screenSwitches}次
+            </span>
+            {antiCheat.screenSwitches >= 2 && (
+              <span className="text-xs text-yellow-400">黄牌警告！</span>
+            )}
+          </div>
+        )}
+
+        {/* 题目卡片 */}
+        <div className="glass-card p-6 mb-6 animate-fadeIn">
+          {/* 题目类型标签 */}
+          <div className="flex items-center gap-2 mb-4">
+            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+              q.type === 'video_clip' ? 'bg-purple-500/20 text-purple-400' :
+              q.type === 'audio_clip' || q.type === 'song_guess' ? 'bg-blue-500/20 text-blue-400' :
+              'bg-green-500/20 text-green-400'
+            }`}>
+              {q.type === 'video_clip' ? '影视片段' :
+               q.type === 'audio_clip' || q.type === 'song_guess' ? '听歌猜名' :
+               q.type === 'dialect' ? '方言挑战' : '知识问答'}
+            </span>
+            {q.difficulty === 'hard' && (
+              <span className="px-2 py-0.5 rounded-full text-xs bg-red-500/20 text-red-400">较难</span>
+            )}
+            {q.difficulty === 'easy' && (
+              <span className="px-2 py-0.5 rounded-full text-xs bg-green-500/20 text-green-400">简单</span>
+            )}
+          </div>
+
+          {/* 媒体播放器 */}
+          {q.media_url && (
+            <div className="mb-4 rounded-xl overflow-hidden bg-black/30">
+              {q.media_type === 'video' ? (
+                <video
+                  src={q.media_url}
+                  controls
+                  autoPlay
+                  className="w-full max-h-48 object-contain"
+                  playsInline
+                />
+              ) : q.media_type === 'audio' ? (
+                <div className="p-4 flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0 animate-pulse-soft">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+                      <polygon points="5 3 19 12 5 21 5 3"/>
+                    </svg>
+                  </div>
+                  <audio src={q.media_url} controls autoPlay className="flex-1 h-10" playsInline/>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          {/* 题目文字 */}
+          <p className="text-base leading-relaxed whitespace-pre-line">{q.question_text}</p>
+        </div>
+
+        {/* 选项/自由作答 */}
+        {!hasSubmitted ? (
+          <div className="space-y-3 mb-6">
+            {hasOptions ? (
+              q.options!.map((opt) => (
+                <button
+                  key={opt.index}
+                  onClick={() => setSelectedOption(opt.index)}
+                  className={`option-btn ${selectedOption === opt.index ? 'selected' : ''}`}
+                >
+                  {opt.text}
+                </button>
+              ))
+            ) : (
+              <textarea
+                className="free-answer"
+                placeholder="输入你的答案..."
+                value={freeText}
+                onChange={(e) => setFreeText(e.target.value)}
+                rows={3}
+              />
+            )}
+
+            <button
+              onClick={handleSubmitAnswer}
+              disabled={hasOptions ? selectedOption === null : !freeText.trim()}
+              className="btn-primary mt-2"
+            >
+              提交答案
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3 mb-6">
+            {hasOptions && q.options!.map((opt) => (
+              <div
+                key={opt.index}
+                className={`option-btn dimmed ${
+                  selectedOption === opt.index ? 'selected' : ''
+                }`}
+              >
+                {opt.text}
+              </div>
+            ))}
+            <div className="text-center text-sm text-[var(--text-secondary)] py-4">
+              已提交，等待主持人揭晓答案...
+            </div>
+          </div>
+        )}
+
+        {/* 激励/警告消息 */}
+        {streakMsg && <div className="streak-bubble mb-4">{streakMsg}</div>}
+        {warningMsg && <div className="warning-bubble mb-4">{warningMsg}</div>}
+        <GameAssistant roomId={room?.id} playerId={player?.id} mode="player" />
+      </main>
+    );
+  }
+
+  // 揭晓答案阶段
+  if (phase === 'revealed' && currentRound?.question) {
+    const q = currentRound.question;
+    const isCorrect = myAnswer?.is_correct;
+
+    return (
+      <main className="min-h-[100dvh] px-4 py-6 max-w-lg mx-auto">
+        <div className="text-center mb-6 animate-fadeIn">
+          <div className="text-6xl mb-3">{isCorrect ? '&#x2705;' : '&#x274C;'}</div>
+          <h2 className={`text-2xl font-bold ${isCorrect ? 'text-green-400' : 'text-red-400'}`}>
+            {isCorrect ? '回答正确！' : '回答错误'}
+          </h2>
+          {isCorrect && (
+            <p className="text-lg font-bold text-blue-400 mt-2 animate-scorePop">
+              +{myAnswer?.points_earned || 0} 分
+            </p>
+          )}
+        </div>
+
+        {/* 正确答案 */}
+        <div className="glass-card p-5 mb-6 animate-slideUp">
+          <p className="text-xs text-[var(--text-secondary)] mb-2">正确答案</p>
+          <p className="text-lg font-bold text-green-400">{q.correct_answer}</p>
+          {q.answer_explanation && (
+            <p className="text-sm text-[var(--text-secondary)] mt-3 leading-relaxed">
+              {q.answer_explanation}
+            </p>
+          )}
+          {q.source_info && (
+            <p className="text-xs text-[var(--text-secondary)] mt-2">
+              来源: {q.source_info}
+            </p>
+          )}
+        </div>
+
+        {/* 我的回答 */}
+        {myAnswer && (
+          <div className="glass-card-sm p-4 mb-4">
+            <div className="flex justify-between text-sm">
+              <span className="text-[var(--text-secondary)]">你的答案</span>
+              <span>{myAnswer.selected_text || '未作答'}</span>
+            </div>
+            <div className="flex justify-between text-sm mt-2">
+              <span className="text-[var(--text-secondary)]">用时</span>
+              <span>{(myAnswer.time_taken_ms / 1000).toFixed(1)}s</span>
+            </div>
+            {myAnswer.screen_switches > 0 && (
+              <div className="flex justify-between text-sm mt-2">
+                <span className="text-[var(--text-secondary)]">切屏次数</span>
+                <span className="text-yellow-400">{myAnswer.screen_switches}次</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 激励/警告 */}
+        {streakMsg && <div className="streak-bubble mb-4">{streakMsg}</div>}
+        {warningMsg && <div className="warning-bubble mb-4">{warningMsg}</div>}
+
+        <div className="text-center text-sm text-[var(--text-secondary)] mt-8">
+          等待下一题...
+        </div>
+      </main>
+    );
+  }
+
+  // 游戏结束
+  if (phase === 'finished') {
+    const myRank = rankings.find(r => r.player_id === player?.id);
+    const myGroup = player?.group_label;
+    const groupRankings = rankings.filter(r => r.group_label === myGroup);
+
+    return (
+      <main className="min-h-[100dvh] px-4 py-8 max-w-lg mx-auto">
+        <div className="text-center mb-8 animate-fadeIn">
+          <h2 className="text-2xl font-bold mb-2">游戏结束</h2>
+          {myRank && (
+            <p className="text-lg">
+              你在{myGroup}组排名第
+              <span className="text-2xl font-bold text-blue-400 mx-1">{myRank.rank_position}</span>
+              名
+            </p>
+          )}
+        </div>
+
+        {/* 我的成绩 */}
+        <div className="glass-card p-5 mb-6">
+          <div className="flex items-center gap-3 mb-4">
+            <span className={`group-badge group-${(myGroup || 'a').toLowerCase()}`}>{myGroup}</span>
+            <div>
+              <p className="font-semibold">{player?.nickname}</p>
+              <p className="text-xs text-[var(--text-secondary)]">最终成绩</p>
+            </div>
+            <p className="ml-auto text-2xl font-bold text-blue-400">{player?.score || 0}分</p>
+          </div>
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <div>
+              <p className="text-xl font-bold text-green-400">{player?.correct_count || 0}</p>
+              <p className="text-xs text-[var(--text-secondary)]">正确</p>
+            </div>
+            <div>
+              <p className="text-xl font-bold text-red-400">{player?.wrong_count || 0}</p>
+              <p className="text-xs text-[var(--text-secondary)]">错误</p>
+            </div>
+            <div>
+              <p className="text-xl font-bold text-yellow-400">{player?.max_streak || 0}</p>
+              <p className="text-xs text-[var(--text-secondary)]">最长连对</p>
+            </div>
+          </div>
+        </div>
+
+        {/* 排行榜 */}
+        <div className="glass-card p-5 mb-6">
+          <h3 className="font-bold mb-4 text-center">
+            {myGroup}组排行榜
+          </h3>
+
+          {/* 领奖台 */}
+          {groupRankings.length >= 3 && (
+            <div className="podium mb-6">
+              {/* 第二 */}
+              <div className="podium-item">
+                <p className="text-xs text-center mb-1">{groupRankings[1]?.player?.nickname}</p>
+                <div className="podium-bar silver">
+                  <span className="text-2xl">2</span>
+                  <span className="text-xs">{groupRankings[1]?.final_score}分</span>
+                </div>
+              </div>
+              {/* 第一 */}
+              <div className="podium-item">
+                <p className="text-xs text-center mb-1">{groupRankings[0]?.player?.nickname}</p>
+                <div className="podium-bar gold">
+                  <span className="text-2xl">1</span>
+                  <span className="text-xs">{groupRankings[0]?.final_score}分</span>
+                </div>
+              </div>
+              {/* 第三 */}
+              <div className="podium-item">
+                <p className="text-xs text-center mb-1">{groupRankings[2]?.player?.nickname}</p>
+                <div className="podium-bar bronze">
+                  <span className="text-2xl">3</span>
+                  <span className="text-xs">{groupRankings[2]?.final_score}分</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 完整列表 */}
+          <div className="space-y-2">
+            {groupRankings.map((r) => (
+              <div key={r.id} className="flex items-center gap-3 py-2 px-3 rounded-lg bg-[rgba(15,23,42,0.4)]">
+                <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                  r.rank_position === 1 ? 'bg-yellow-500 text-black' :
+                  r.rank_position === 2 ? 'bg-gray-400 text-black' :
+                  r.rank_position === 3 ? 'bg-amber-700 text-white' :
+                  'bg-[rgba(148,163,184,0.15)] text-[var(--text-secondary)]'
+                }`}>
+                  {r.rank_position}
+                </span>
+                <span className="flex-1 text-sm">{r.player?.nickname}</span>
+                <span className="text-sm font-bold text-blue-400">{r.final_score}分</span>
+                {r.player_id === player?.id && (
+                  <span className="text-xs text-blue-400 bg-blue-500/15 px-2 py-0.5 rounded-full">你</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <button onClick={() => router.push('/')} className="btn-secondary">
+          返回首页
+        </button>
+      </main>
+    );
+  }
+
+  // 默认加载状态
+  return (
+    <main className="min-h-[100dvh] flex items-center justify-center">
+      <div className="animate-pulse text-[var(--text-secondary)]">加载中...</div>
+    </main>
+  );
+}
