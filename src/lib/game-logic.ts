@@ -135,10 +135,21 @@ export const THEME_CONFIG = {
   beyond: { label: 'Beyond 专场', icon: 'fire' },
   eason: { label: '陈奕迅专场', icon: 'mic' },
   faye: { label: '王菲专场', icon: 'disc' },
+  jacky: { label: '张学友专场', icon: 'music' },
+  leslie: { label: '张国荣专场', icon: 'lyrics' },
+  alan: { label: '谭咏麟专场', icon: 'clock' },
+  anita: { label: '梅艳芳专场', icon: 'fire' },
+  sam: { label: '许冠杰专场', icon: 'mic' },
+  andy: { label: '刘德华专场', icon: 'disc' },
+  leon: { label: '黎明专场', icon: 'music' },
   classic: { label: '粤语经典', icon: 'music' },
+  eighties: { label: '80年代金曲', icon: 'clock' },
+  movie: { label: '电影主题曲', icon: 'lyrics' },
+  rock: { label: '港式摇滚', icon: 'fire' },
+  dance: { label: '劲歌热舞', icon: 'fire' },
+  duet: { label: '合唱金曲', icon: 'mic' },
   new_gen: { label: '新生港乐', icon: 'clock' },
-  rock: { label: '港式摇滚', icon: 'lyrics' },
 } as const
 
-// ─── Song Library (42首粤语港乐 — from cantopop-library.ts) ───
+// ─── Song Library (83首粤语港乐 — from cantopop-library.ts) ───
 export { default as DEMO_SONGS } from './cantopop-library'
