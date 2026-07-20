@@ -18,11 +18,19 @@ export function generateQuestion(
   usedSongIds: Set<string>
 ): { song: Song; options: string[]; correctIndex: number } | null {
   const available = songs.filter(s => !usedSongIds.has(s.id))
-  if (available.length < 4) return null
+  if (available.length < 1) return null
 
+  // Pick a unique correct answer from unused songs
   const shuffled = [...available].sort(() => Math.random() - 0.5)
   const correctSong = shuffled[0]
-  const distractors = shuffled.slice(1, 4)
+
+  // Pick distractors from ALL songs except the current correct song
+  const distractorPool = songs.filter(s => s.id !== correctSong.id)
+  const shuffledDistractors = [...distractorPool].sort(() => Math.random() - 0.5)
+  const distractors = shuffledDistractors.slice(0, 3)
+
+  // Need at least 3 distractors
+  if (distractors.length < 3) return null
 
   const allOptions = [correctSong, ...distractors].map(s => `${s.title} - ${s.artist}`)
   const options = allOptions.sort(() => Math.random() - 0.5)
@@ -130,26 +138,54 @@ export const DIFFICULTY_CONFIG = {
   expert: { label: '地狱', audioDuration: 30, color: '#FF4580' },
 } as const
 
-// ─── Theme Config ───
-export const THEME_CONFIG = {
-  beyond: { label: 'Beyond 专场', icon: 'fire' },
-  eason: { label: '陈奕迅专场', icon: 'mic' },
-  faye: { label: '王菲专场', icon: 'disc' },
-  jacky: { label: '张学友专场', icon: 'music' },
-  leslie: { label: '张国荣专场', icon: 'lyrics' },
-  alan: { label: '谭咏麟专场', icon: 'clock' },
-  anita: { label: '梅艳芳专场', icon: 'fire' },
-  sam: { label: '许冠杰专场', icon: 'mic' },
-  andy: { label: '刘德华专场', icon: 'disc' },
-  leon: { label: '黎明专场', icon: 'music' },
-  classic: { label: '粤语经典', icon: 'music' },
-  eighties: { label: '80年代金曲', icon: 'clock' },
-  movie: { label: '电影主题曲', icon: 'lyrics' },
-  rock: { label: '港式摇滚', icon: 'fire' },
-  dance: { label: '劲歌热舞', icon: 'fire' },
-  duet: { label: '合唱金曲', icon: 'mic' },
-  new_gen: { label: '新生港乐', icon: 'clock' },
+// ─── Theme Config (三维度分组) ───
+export const THEME_GROUPS = {
+  artist: {
+    label: '歌手专场',
+    icon: 'mic',
+    themes: {
+      beyond: { label: 'Beyond', emoji: '🎸' },
+      eason: { label: '陈奕迅', emoji: '🎤' },
+      jacky: { label: '张学友', emoji: '🎶' },
+      leslie: { label: '张国荣', emoji: '⭐' },
+      alan: { label: '谭咏麟', emoji: '🎵' },
+      anita: { label: '梅艳芳', emoji: '🌹' },
+      sam: { label: '许冠杰', emoji: '🎹' },
+      andy: { label: '刘德华', emoji: '🎬' },
+      faye: { label: '王菲', emoji: '🦋' },
+      leon: { label: '黎明', emoji: '🌅' },
+    },
+  },
+  genre: {
+    label: '曲目类型',
+    icon: 'music',
+    themes: {
+      rock: { label: '摇滚经典', emoji: '🤘' },
+      ballad: { label: '情歌金曲', emoji: '💕' },
+      dance: { label: '劲歌热舞', emoji: '💃' },
+      movie: { label: '电影主题曲', emoji: '🎬' },
+      duet: { label: '合唱金曲', emoji: '🤝' },
+    },
+  },
+  era: {
+    label: '年代分类',
+    icon: 'clock',
+    themes: {
+      seventies: { label: '70年代', emoji: '📻' },
+      eighties: { label: '80年代', emoji: '📼' },
+      nineties: { label: '90年代', emoji: '💿' },
+      two_thousands: { label: '00年代', emoji: '📱' },
+    },
+  },
 } as const
+
+// Flat lookup for backward compatibility
+export const THEME_CONFIG: Record<string, { label: string; icon: string }> = {}
+for (const group of Object.values(THEME_GROUPS)) {
+  for (const [key, val] of Object.entries(group.themes)) {
+    THEME_CONFIG[key] = { label: val.label, icon: group.icon }
+  }
+}
 
 // ─── Song Library (83首粤语港乐 — from cantopop-library.ts) ───
 export { default as DEMO_SONGS } from './cantopop-library'

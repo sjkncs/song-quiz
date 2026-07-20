@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { DEMO_SONGS, generateQuiz, createQuizState, submitAnswer, isQuizComplete, getQuizDuration, THEME_CONFIG } from '@/lib/game-logic'
+import { DEMO_SONGS, generateQuiz, createQuizState, submitAnswer, isQuizComplete, getQuizDuration, THEME_CONFIG, THEME_GROUPS } from '@/lib/game-logic'
 import type { QuizState } from '@/lib/game-logic'
 import { QuizCard } from '@/components/QuizCard'
 import { ResultsScreen } from '@/components/ResultsScreen'
@@ -53,7 +53,7 @@ function PlayContent() {
     }
 
     const questions = generateQuiz(songs, Math.min(10, songs.length))
-    if (questions.length < 4) {
+    if (questions.length < 1) {
       router.push('/?error=not-enough-songs')
       return
     }
@@ -86,42 +86,47 @@ function PlayContent() {
 
   // Theme selection screen
   if (phase === 'theme-select') {
+    const groupColors: Record<string, { bg: string; text: string; border: string }> = {
+      artist: { bg: 'bg-violet-500/10', text: 'text-violet-400', border: 'border-violet-400/30' },
+      genre: { bg: 'bg-pink-500/10', text: 'text-pink-400', border: 'border-pink-400/30' },
+      era: { bg: 'bg-cyan-500/10', text: 'text-cyan-400', border: 'border-cyan-400/30' },
+    }
     return (
-      <main className="flex-1 flex flex-col items-center justify-center min-h-screen px-6 py-12">
-        <div className="text-center mb-10 slide-up">
+      <main className="flex-1 flex flex-col items-center min-h-screen px-6 py-12 overflow-y-auto">
+        <div className="text-center mb-8 slide-up">
           <h1 className="text-3xl font-bold text-white mb-2">选择主题专场</h1>
-          <p className="text-sm text-slate-400">挑选你擅长的音乐类型，开始挑战</p>
+          <p className="text-sm text-slate-400">按歌手、曲目类型或年代分类，挑选你擅长的方向</p>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-2xl w-full slide-up slide-up-delay-1">
-          {Object.entries(THEME_CONFIG).map(([key, config]) => {
-            const iconColors: Record<string, string> = {
-              mic: 'text-pink-400', music: 'text-violet-400', fire: 'text-amber-400',
-              disc: 'text-cyan-400', clock: 'text-emerald-400', lyrics: 'text-blue-400',
-            }
-            const iconBgs: Record<string, string> = {
-              mic: 'bg-pink-500/15', music: 'bg-violet-500/15', fire: 'bg-amber-500/15',
-              disc: 'bg-cyan-500/15', clock: 'bg-emerald-500/15', lyrics: 'bg-blue-500/15',
-            }
+        <div className="w-full max-w-3xl space-y-8 slide-up slide-up-delay-1">
+          {Object.entries(THEME_GROUPS).map(([groupKey, group]) => {
+            const colors = groupColors[groupKey] || groupColors.artist
             return (
-              <button
-                key={key}
-                onClick={() => handleThemeSelect(key)}
-                className="glass glass-hover btn-press rounded-2xl p-6 text-left"
-              >
-                <div className={`w-10 h-10 rounded-xl ${iconBgs[config.icon] || 'bg-white/5'} flex items-center justify-center mb-3`}>
-                  <ThemeIcon name={config.icon} className={iconColors[config.icon] || 'text-white'} />
+              <div key={groupKey}>
+                <h2 className={`text-lg font-semibold mb-3 ${colors.text}`}>{group.label}</h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+                  {Object.entries(group.themes).map(([key, theme]) => {
+                    const count = DEMO_SONGS.filter(s => s.theme.includes(key)).length
+                    if (count === 0) return null
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => handleThemeSelect(key)}
+                        className={`glass glass-hover btn-press rounded-xl p-4 text-left ${colors.border} border`}
+                      >
+                        <div className="text-2xl mb-1">{theme.emoji}</div>
+                        <h3 className="text-white font-medium text-sm">{theme.label}</h3>
+                        <p className="text-xs text-slate-500">{count} 首</p>
+                      </button>
+                    )
+                  })}
                 </div>
-                <h3 className="text-white font-semibold mb-1">{config.label}</h3>
-                <p className="text-xs text-slate-500">
-                  {DEMO_SONGS.filter(s => s.theme.includes(key)).length} 首曲目
-                </p>
-              </button>
+              </div>
             )
           })}
         </div>
         <button
           onClick={() => router.push('/')}
-          className="mt-10 text-sm text-slate-500 hover:text-slate-300 transition-colors flex items-center gap-2"
+          className="mt-8 mb-4 text-sm text-slate-500 hover:text-slate-300 transition-colors flex items-center gap-2"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
