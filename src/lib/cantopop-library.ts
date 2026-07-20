@@ -3,9 +3,11 @@
 
 import { Song } from './supabase'
 
-// YouTube video URLs — real IDs for popular songs, search embed fallback for others
-// YouTube search embed — auto-plays first result for the query
-const VS = (query: string) => `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(query)}`
+// YouTube video URLs
+// Direct embed with video ID
+const V = (id: string) => `https://www.youtube.com/embed/${id}`
+// YouTube search URL (opens search results, user picks video)
+const VS = (query: string) => `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`
 
 export const CANTOPOP_LIBRARY: Song[] = [
   // ═══ Beyond 专场 ═══
