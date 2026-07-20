@@ -383,6 +383,28 @@ export async function submitAnswer(
     });
   }
 
+  // 更新玩家积分和统计
+  const { data: currentPlayer } = await supabase
+    .from('game_players')
+    .select('score, correct_count, wrong_count, streak, max_streak')
+    .eq('id', playerId)
+    .single();
+
+  if (currentPlayer) {
+    const newStreak = isCorrect ? (currentPlayer.streak || 0) + 1 : 0;
+    const newMaxStreak = Math.max(currentPlayer.max_streak || 0, newStreak);
+    await supabase
+      .from('game_players')
+      .update({
+        score: (currentPlayer.score || 0) + pointsEarned,
+        correct_count: (currentPlayer.correct_count || 0) + (isCorrect ? 1 : 0),
+        wrong_count: (currentPlayer.wrong_count || 0) + (isCorrect ? 0 : 1),
+        streak: newStreak,
+        max_streak: newMaxStreak,
+      })
+      .eq('id', playerId);
+  }
+
   return data as GameAnswer;
 }
 

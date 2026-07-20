@@ -188,6 +188,20 @@ export default function GamePage() {
       );
       setMyAnswer(answer);
 
+      // 本地更新玩家积分（乐观更新）
+      if (player) {
+        const pointsEarned = answer.is_correct ? 100 : 0;
+        const newStreak = answer.is_correct ? (player.streak || 0) + 1 : 0;
+        setPlayer({
+          ...player,
+          score: (player.score || 0) + pointsEarned,
+          correct_count: (player.correct_count || 0) + (answer.is_correct ? 1 : 0),
+          wrong_count: (player.wrong_count || 0) + (answer.is_correct ? 0 : 1),
+          streak: newStreak,
+          max_streak: Math.max(player.max_streak || 0, newStreak),
+        });
+      }
+
       // 广播已答题通知管理端
       await broadcast({
         type: 'player_answer',
