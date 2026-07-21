@@ -135,7 +135,11 @@ export interface GameRanking {
   award_tier: number | null;
   final_score: number;
   correct_count: number;
+  wrong_count: number;
+  total_questions: number;
+  accuracy_rate: number;
   avg_time_ms: number | null;
+  total_time_ms: number;
   total_screen_switches: number;
   // join
   player?: GamePlayer;

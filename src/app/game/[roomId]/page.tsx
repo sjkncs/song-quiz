@@ -16,6 +16,67 @@ import GameAssistant from '@/components/GameAssistant';
 
 type Phase = 'join' | 'waiting' | 'playing' | 'revealed' | 'finished';
 
+function MediaPlayArea({ mediaUrl, mediaType }: { mediaUrl: string; mediaType: string | null }) {
+  const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement>(null);
+  const [autoplayFailed, setAutoplayFailed] = useState(false);
+
+  useEffect(() => {
+    setAutoplayFailed(false);
+    const el = mediaRef.current;
+    if (!el) return;
+    const tryPlay = el.play();
+    if (tryPlay && typeof tryPlay.catch === 'function') {
+      tryPlay.catch(() => setAutoplayFailed(true));
+    }
+  }, [mediaUrl]);
+
+  const handleManualPlay = () => {
+    mediaRef.current?.play();
+    setAutoplayFailed(false);
+  };
+
+  if (!mediaType) return null;
+
+  return (
+    <div className="mb-4 rounded-xl overflow-hidden bg-black/30 relative">
+      {mediaType === 'video' ? (
+        <>
+          <video
+            ref={mediaRef as React.RefObject<HTMLVideoElement>}
+            src={mediaUrl}
+            controls
+            playsInline
+            className="w-full max-h-48 object-contain"
+          />
+        </>
+      ) : mediaType === 'audio' ? (
+        <div className="p-4 flex items-center gap-3">
+          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0 animate-pulse-soft">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+          </div>
+          <audio
+            ref={mediaRef as React.RefObject<HTMLAudioElement>}
+            src={mediaUrl}
+            controls
+            playsInline
+            className="flex-1 h-10"
+          />
+        </div>
+      ) : null}
+      {autoplayFailed && (
+        <button
+          onClick={handleManualPlay}
+          className="absolute inset-0 flex items-center justify-center bg-black/40 text-white text-sm font-medium"
+        >
+          点击播放
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function GamePage() {
   const params = useParams();
   const router = useRouter();
@@ -57,8 +118,6 @@ export default function GamePage() {
       try {
         const r = await getRoomByCode(roomCode);
         setRoom(r);
-        if (r.status === 'finished') setPhase('finished');
-        else if (r.status === 'playing') setPhase('playing');
 
         // 尝试获取当前玩家
         const me = await getMyPlayer(r.id);
@@ -66,11 +125,24 @@ export default function GamePage() {
           setPlayer(me);
           const allPlayers = await getPlayers(r.id);
           setPlayers(allPlayers);
-          if (r.status === 'playing' || r.status === 'starting') {
+
+          if (r.status === 'finished') {
+            setPhase('finished');
+            const rk = await getRankings(r.id);
+            setRankings(rk);
+          } else if (r.status === 'playing' || r.status === 'starting') {
             setPhase(r.status === 'starting' ? 'waiting' : 'playing');
             const round = await getCurrentRound(r.id);
             if (round) setCurrentRound(round);
+          } else {
+            // waiting 状态且已加入 -> 显示等待界面
+            setPhase('waiting');
           }
+        } else if (r.status === 'finished') {
+          // 未加入但游戏已结束（旁观）
+          setPhase('finished');
+          const rk = await getRankings(r.id);
+          setRankings(rk);
         }
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : '房间不存在');
@@ -473,26 +545,10 @@ export default function GamePage() {
 
           {/* 媒体播放器 */}
           {q.media_url && (
-            <div className="mb-4 rounded-xl overflow-hidden bg-black/30">
-              {q.media_type === 'video' ? (
-                <video
-                  src={q.media_url}
-                  controls
-                  autoPlay
-                  className="w-full max-h-48 object-contain"
-                  playsInline
-                />
-              ) : q.media_type === 'audio' ? (
-                <div className="p-4 flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0 animate-pulse-soft">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
-                      <polygon points="5 3 19 12 5 21 5 3"/>
-                    </svg>
-                  </div>
-                  <audio src={q.media_url} controls autoPlay className="flex-1 h-10" playsInline/>
-                </div>
-              ) : null}
-            </div>
+            <MediaPlayArea
+              mediaUrl={q.media_url}
+              mediaType={q.media_type || (q.type === 'video_clip' ? 'video' : q.type === 'song_guess' || q.type === 'dialect' ? 'audio' : null)}
+            />
           )}
 
           {/* 题目文字 */}
@@ -627,21 +683,22 @@ export default function GamePage() {
     const myRank = rankings.find(r => r.player_id === player?.id);
     const myGroup = player?.group_label;
     const groupRankings = rankings.filter(r => r.group_label === myGroup);
+    const totalQ = (player?.correct_count || 0) + (player?.wrong_count || 0);
+    const myAccuracy = totalQ > 0 ? Math.round(((player?.correct_count || 0) / totalQ) * 100) : 0;
 
     return (
       <main className="min-h-[100dvh] px-4 py-8 max-w-lg mx-auto">
-        <div className="text-center mb-8 animate-fadeIn">
-          <h2 className="text-2xl font-bold mb-2">游戏结束</h2>
+        <div className="text-center mb-6 animate-fadeIn">
+          <h2 className="text-2xl font-bold mb-2">🎮 游戏结束</h2>
           {myRank && (
             <p className="text-lg">
-              你在{myGroup}组排名第
-              <span className="text-2xl font-bold text-blue-400 mx-1">{myRank.rank_position}</span>
-              名
+              总排名
+              <span className="text-3xl font-bold text-yellow-400 mx-1">#{myRank.rank_position}</span>
             </p>
           )}
         </div>
 
-        {/* 我的成绩 */}
+        {/* 我的成绩卡 */}
         <div className="glass-card p-5 mb-6">
           <div className="flex items-center gap-3 mb-4">
             <span className={`group-badge group-${(myGroup || 'a').toLowerCase()}`}>{myGroup}</span>
@@ -649,65 +706,66 @@ export default function GamePage() {
               <p className="font-semibold">{player?.nickname}</p>
               <p className="text-xs text-[var(--text-secondary)]">最终成绩</p>
             </div>
-            <p className="ml-auto text-2xl font-bold text-blue-400">{player?.score || 0}分</p>
+            <p className="ml-auto text-3xl font-bold text-blue-400">{player?.score || 0}<span className="text-sm text-[var(--text-secondary)]">分</span></p>
           </div>
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div>
-              <p className="text-xl font-bold text-green-400">{player?.correct_count || 0}</p>
-              <p className="text-xs text-[var(--text-secondary)]">正确</p>
+          <div className="grid grid-cols-4 gap-3 text-center">
+            <div className="bg-[rgba(15,23,42,0.4)] rounded-lg p-2">
+              <p className="text-lg font-bold text-green-400">{player?.correct_count || 0}</p>
+              <p className="text-[10px] text-[var(--text-secondary)]">正确</p>
             </div>
-            <div>
-              <p className="text-xl font-bold text-red-400">{player?.wrong_count || 0}</p>
-              <p className="text-xs text-[var(--text-secondary)]">错误</p>
+            <div className="bg-[rgba(15,23,42,0.4)] rounded-lg p-2">
+              <p className="text-lg font-bold text-red-400">{player?.wrong_count || 0}</p>
+              <p className="text-[10px] text-[var(--text-secondary)]">错误</p>
             </div>
-            <div>
-              <p className="text-xl font-bold text-yellow-400">{player?.max_streak || 0}</p>
-              <p className="text-xs text-[var(--text-secondary)]">最长连对</p>
+            <div className="bg-[rgba(15,23,42,0.4)] rounded-lg p-2">
+              <p className={`text-lg font-bold ${myAccuracy >= 80 ? 'text-green-400' : myAccuracy >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>{myAccuracy}%</p>
+              <p className="text-[10px] text-[var(--text-secondary)]">正确率</p>
+            </div>
+            <div className="bg-[rgba(15,23,42,0.4)] rounded-lg p-2">
+              <p className="text-lg font-bold text-yellow-400">{player?.max_streak || 0}</p>
+              <p className="text-[10px] text-[var(--text-secondary)]">最长连对</p>
             </div>
           </div>
         </div>
 
-        {/* 排行榜 */}
+        {/* 总排名 */}
         <div className="glass-card p-5 mb-6">
-          <h3 className="font-bold mb-4 text-center">
-            {myGroup}组排行榜
-          </h3>
+          <h3 className="font-bold mb-4 text-center">🏆 总排名</h3>
 
-          {/* 领奖台 */}
-          {groupRankings.length >= 3 && (
-            <div className="podium mb-6">
-              {/* 第二 */}
+          {/* 领奖台（前3名） */}
+          {rankings.length >= 3 && (
+            <div className="podium mb-4">
               <div className="podium-item">
-                <p className="text-xs text-center mb-1">{groupRankings[1]?.player?.nickname}</p>
+                <p className="text-xs text-center mb-1">{rankings[1]?.player?.nickname}</p>
                 <div className="podium-bar silver">
                   <span className="text-2xl">2</span>
-                  <span className="text-xs">{groupRankings[1]?.final_score}分</span>
+                  <span className="text-xs">{rankings[1]?.final_score}分</span>
                 </div>
               </div>
-              {/* 第一 */}
               <div className="podium-item">
-                <p className="text-xs text-center mb-1">{groupRankings[0]?.player?.nickname}</p>
+                <p className="text-xs text-center mb-1">{rankings[0]?.player?.nickname}</p>
                 <div className="podium-bar gold">
                   <span className="text-2xl">1</span>
-                  <span className="text-xs">{groupRankings[0]?.final_score}分</span>
+                  <span className="text-xs">{rankings[0]?.final_score}分</span>
                 </div>
               </div>
-              {/* 第三 */}
               <div className="podium-item">
-                <p className="text-xs text-center mb-1">{groupRankings[2]?.player?.nickname}</p>
+                <p className="text-xs text-center mb-1">{rankings[2]?.player?.nickname}</p>
                 <div className="podium-bar bronze">
                   <span className="text-2xl">3</span>
-                  <span className="text-xs">{groupRankings[2]?.final_score}分</span>
+                  <span className="text-xs">{rankings[2]?.final_score}分</span>
                 </div>
               </div>
             </div>
           )}
 
-          {/* 完整列表 */}
+          {/* 完整排名 */}
           <div className="space-y-2">
-            {groupRankings.map((r) => (
-              <div key={r.id} className="flex items-center gap-3 py-2 px-3 rounded-lg bg-[rgba(15,23,42,0.4)]">
-                <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+            {rankings.map((r) => (
+              <div key={r.id} className={`flex items-center gap-2 py-2 px-3 rounded-lg ${
+                r.player_id === player?.id ? 'bg-blue-500/15 border border-blue-500/30' : 'bg-[rgba(15,23,42,0.4)]'
+              }`}>
+                <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
                   r.rank_position === 1 ? 'bg-yellow-500 text-black' :
                   r.rank_position === 2 ? 'bg-gray-400 text-black' :
                   r.rank_position === 3 ? 'bg-amber-700 text-white' :
@@ -715,17 +773,47 @@ export default function GamePage() {
                 }`}>
                   {r.rank_position}
                 </span>
-                <span className="flex-1 text-sm">{r.player?.nickname}</span>
-                <span className="text-sm font-bold text-blue-400">{r.final_score}分</span>
-                {r.player_id === player?.id && (
-                  <span className="text-xs text-blue-400 bg-blue-500/15 px-2 py-0.5 rounded-full">你</span>
-                )}
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold flex-shrink-0 ${
+                  r.group_label === 'A' ? 'bg-blue-500/20 text-blue-400' : 'bg-yellow-500/20 text-yellow-400'
+                }`}>{r.group_label}</span>
+                <span className="flex-1 min-w-0 text-sm font-medium">{r.player?.nickname}</span>
+                <div className="flex items-center gap-2 flex-shrink-0 text-xs">
+                  <span className="text-blue-400 font-bold">{r.final_score}分</span>
+                  <span className={`${r.accuracy_rate >= 80 ? 'text-green-400' : r.accuracy_rate >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
+                    {r.accuracy_rate}%
+                  </span>
+                  {r.player_id === player?.id && (
+                    <span className="text-blue-400 bg-blue-500/15 px-1.5 py-0.5 rounded-full text-[10px]">你</span>
+                  )}
+                </div>
               </div>
             ))}
           </div>
         </div>
 
-        <button onClick={() => router.push('/')} className="btn-secondary">
+        {/* 分组排名 */}
+        <div className="glass-card p-5 mb-6">
+          <h3 className="font-bold mb-3 flex items-center gap-2">
+            <span className={`group-badge group-${(myGroup || 'a').toLowerCase()}`}>{myGroup}</span>
+            {myGroup}组排名
+          </h3>
+          <div className="space-y-1.5">
+            {groupRankings.map((r, i) => (
+              <div key={r.id} className={`flex items-center gap-2 py-2 px-3 rounded-lg text-sm ${
+                r.player_id === player?.id ? 'bg-blue-500/15 border border-blue-500/30' : 'bg-[rgba(15,23,42,0.4)]'
+              }`}>
+                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                  i === 0 ? 'bg-yellow-500 text-black' : i === 1 ? 'bg-gray-400 text-black' : i === 2 ? 'bg-amber-700 text-white' : 'bg-[rgba(148,163,184,0.1)] text-[var(--text-secondary)]'
+                }`}>{i + 1}</span>
+                <span className="flex-1 min-w-0 font-medium">{r.player?.nickname}</span>
+                <span className="font-bold text-blue-400">{r.final_score}分</span>
+                <span className="text-xs text-[var(--text-secondary)]">{r.correct_count}✓{r.wrong_count}✗</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <button onClick={() => router.push('/')} className="btn-secondary w-full">
           返回首页
         </button>
       </main>

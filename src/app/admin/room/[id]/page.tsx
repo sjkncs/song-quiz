@@ -53,6 +53,12 @@ export default function AdminRoomPage() {
           const ans = await getRoundAnswers(round.id);
           setAnswers(ans);
         }
+
+        // 如果游戏已结束，加载排名数据
+        if (r.status === 'finished') {
+          const rk = await getRankings(roomId);
+          setRankings(rk);
+        }
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : '加载失败');
       }
@@ -89,30 +95,29 @@ export default function AdminRoomPage() {
   // ============================================================
 
   const handleStartGame = async () => {
+    if (questions.length === 0) {
+      setError('没有可用的题目');
+      return;
+    }
     setActionLoading(true);
+    setError('');
     try {
       await updateRoomStatus(roomId, 'starting');
-      // 通知玩家游戏即将开始
       await broadcast({ type: 'game_start', payload: {} });
 
-      // 准备第一题
-      if (questions.length > 0) {
-        const q = questions[0];
-        const round = await createRound(roomId, 1, q.id, room?.config.time_per_question_sec || 30);
-        await updateCurrentRound(roomId, 1);
-        await startRound(round.id);
-        const roundWithQuestion = { ...round, question: q };
-        setCurrentRound(roundWithQuestion);
+      const q = questions[0];
+      const round = await createRound(roomId, 1, q.id, room?.config?.time_per_question_sec || 30);
+      await updateCurrentRound(roomId, 1);
+      await startRound(round.id);
+      const roundWithQuestion = { ...round, question: q };
+      setCurrentRound(roundWithQuestion);
 
-        // 切换到 playing 状态让玩家能看到题目
-        await updateRoomStatus(roomId, 'playing');
+      await updateRoomStatus(roomId, 'playing');
 
-        // 广播第一题开始
-        await broadcast({
-          type: 'round_start',
-          payload: { round_number: 1, round: roundWithQuestion },
-        });
-      }
+      await broadcast({
+        type: 'round_start',
+        payload: { round_number: 1, round: roundWithQuestion },
+      });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '操作失败');
     }
@@ -121,6 +126,7 @@ export default function AdminRoomPage() {
 
   const handleNextQuestion = async () => {
     if (!room) return;
+    setError('');
     const nextNum = (room.current_round || 0) + 1;
     if (nextNum > questions.length) {
       // 游戏结束
@@ -178,11 +184,17 @@ export default function AdminRoomPage() {
 
   const handleFinishGame = async () => {
     setActionLoading(true);
+    setError('');
     try {
-      if (currentRound) await completeRound(currentRound.id);
+      if (currentRound) {
+        await completeRound(currentRound.id);
+        await broadcast({
+          type: 'round_complete',
+          payload: { round_id: currentRound.id },
+        });
+      }
       await adminGenerateRankings(roomId);
       await updateRoomStatus(roomId, 'finished');
-      // 广播游戏结束
       await broadcast({ type: 'game_finish', payload: {} });
       const r = await getRankings(roomId);
       setRankings(r);
@@ -197,7 +209,9 @@ export default function AdminRoomPage() {
       await assignGroup(playerId, group);
       const p = await getPlayers(roomId);
       setPlayers(p);
-    } catch {}
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '分组失败');
+    }
   };
 
   const handleAddScore = async (playerId: string, points: number) => {
@@ -205,7 +219,9 @@ export default function AdminRoomPage() {
       await adminApplyScore(playerId, points);
       const p = await getPlayers(roomId);
       setPlayers(p);
-    } catch {}
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '修改分数失败');
+    }
   };
 
   const handleRemovePlayer = async (playerId: string, nickname: string) => {
@@ -510,69 +526,131 @@ export default function AdminRoomPage() {
         {tab === 'ranking' && (
           <div className="space-y-4">
             {room?.status === 'finished' ? (
-              <div className="grid md:grid-cols-2 gap-4">
-                {(['A', 'B'] as GroupLabel[]).map((g) => {
-                  const groupR = rankings.filter(r => r.group_label === g);
-                  return (
-                    <div key={g} className="glass-card p-5">
-                      <h3 className="font-bold mb-4 flex items-center gap-2">
-                        <span className={`group-badge group-${g.toLowerCase()}`}>{g}</span>
-                        {g}组排名
-                      </h3>
-                      <div className="space-y-2">
-                        {groupR.map((r) => (
-                          <div key={r.id} className="flex items-center gap-3 py-2 px-3 rounded-lg bg-[rgba(15,23,42,0.4)]">
-                            <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                              r.rank_position === 1 ? 'bg-yellow-500 text-black' :
-                              r.rank_position === 2 ? 'bg-gray-400 text-black' :
-                              r.rank_position === 3 ? 'bg-amber-700 text-white' :
-                              'bg-[rgba(148,163,184,0.15)] text-[var(--text-secondary)]'
-                            }`}>
-                              {r.rank_position}
+              <>
+                {/* 总排名 */}
+                <div className="glass-card p-5">
+                  <h3 className="font-bold mb-4 flex items-center gap-2">
+                    <span className="text-yellow-400">🏆</span> 总排名
+                  </h3>
+                  <div className="space-y-2">
+                    {rankings.map((r) => (
+                      <div key={r.id} className="flex items-center gap-2 py-2.5 px-3 rounded-lg bg-[rgba(15,23,42,0.4)]">
+                        <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
+                          r.rank_position === 1 ? 'bg-yellow-500 text-black' :
+                          r.rank_position === 2 ? 'bg-gray-400 text-black' :
+                          r.rank_position === 3 ? 'bg-amber-700 text-white' :
+                          'bg-[rgba(148,163,184,0.15)] text-[var(--text-secondary)]'
+                        }`}>
+                          {r.rank_position}
+                        </span>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold flex-shrink-0 ${
+                          r.group_label === 'A' ? 'bg-blue-500/20 text-blue-400' : 'bg-yellow-500/20 text-yellow-400'
+                        }`}>{r.group_label}</span>
+                        <span className="flex-1 min-w-0">
+                          <span className="text-sm font-medium">{r.player?.nickname}</span>
+                          <span className="text-xs text-[var(--text-secondary)] ml-1">({r.player?.real_name})</span>
+                        </span>
+                        <div className="flex items-center gap-3 flex-shrink-0 text-xs">
+                          <span className="text-blue-400 font-bold">{r.final_score}分</span>
+                          <span className="text-[var(--text-secondary)]">
+                            {r.correct_count}✓{r.wrong_count}✗
+                          </span>
+                          <span className={`${r.accuracy_rate >= 80 ? 'text-green-400' : r.accuracy_rate >= 50 ? 'text-yellow-400' : 'text-red-400'} font-medium`}>
+                            {r.accuracy_rate}%
+                          </span>
+                          {r.avg_time_ms != null && (
+                            <span className="text-[var(--text-secondary)]">
+                              {(r.avg_time_ms / 1000).toFixed(1)}s
                             </span>
-                            <span className="flex-1">
-                              <span className="text-sm">{r.player?.nickname}</span>
-                              <span className="text-xs text-[var(--text-secondary)] ml-2">
-                                ({players.find(p => p.id === r.player_id)?.real_name})
-                              </span>
-                            </span>
-                            <span className="text-sm font-bold text-blue-400">{r.final_score}分</span>
-                            <span className="text-xs text-[var(--text-secondary)]">
-                              第{r.award_tier}等
-                            </span>
-                          </div>
-                        ))}
-                        {groupR.length === 0 && (
-                          <p className="text-sm text-[var(--text-secondary)] text-center py-4">暂无数据</p>
-                        )}
+                          )}
+                          {r.total_screen_switches > 0 && (
+                            <span className="text-red-400">⚠{r.total_screen_switches}</span>
+                          )}
+                          <span className="px-1.5 py-0.5 rounded bg-[rgba(148,163,184,0.1)] text-[var(--text-secondary)]">
+                            第{r.award_tier}等
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="glass-card p-5">
-                <h3 className="font-bold mb-4">实时积分</h3>
+                    ))}
+                    {rankings.length === 0 && (
+                      <p className="text-sm text-[var(--text-secondary)] text-center py-4">暂无数据</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* 分组排名 */}
                 <div className="grid md:grid-cols-2 gap-4">
                   {(['A', 'B'] as GroupLabel[]).map((g) => {
-                    const groupPlayers = players
-                      .filter(p => p.group_label === g)
-                      .sort((a, b) => b.score - a.score);
+                    const groupR = rankings.filter(r => r.group_label === g);
                     return (
-                      <div key={g}>
-                        <p className="text-sm font-semibold mb-2 text-[var(--text-secondary)]">{g}组</p>
-                        <div className="space-y-1">
-                          {groupPlayers.map((p, i) => (
-                            <div key={p.id} className="flex items-center gap-2 py-1.5 px-3 rounded-lg bg-[rgba(15,23,42,0.4)] text-sm">
-                              <span className="w-5 text-center text-xs text-[var(--text-secondary)]">{i + 1}</span>
-                              <span className="flex-1">{p.nickname}</span>
-                              <span className="font-bold text-blue-400">{p.score}</span>
+                      <div key={g} className="glass-card p-5">
+                        <h3 className="font-bold mb-3 flex items-center gap-2">
+                          <span className={`group-badge group-${g.toLowerCase()}`}>{g}</span>
+                          {g}组排名
+                        </h3>
+                        <div className="space-y-1.5">
+                          {groupR.map((r, i) => (
+                            <div key={r.id} className="flex items-center gap-2 py-2 px-3 rounded-lg bg-[rgba(15,23,42,0.4)] text-sm">
+                              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                                i === 0 ? 'bg-yellow-500 text-black' : i === 1 ? 'bg-gray-400 text-black' : i === 2 ? 'bg-amber-700 text-white' : 'bg-[rgba(148,163,184,0.1)] text-[var(--text-secondary)]'
+                              }`}>{i + 1}</span>
+                              <span className="flex-1 min-w-0">
+                                <span className="font-medium">{r.player?.nickname}</span>
+                              </span>
+                              <span className="font-bold text-blue-400">{r.final_score}分</span>
+                              <span className="text-xs text-[var(--text-secondary)]">{r.accuracy_rate}%</span>
                             </div>
                           ))}
+                          {groupR.length === 0 && (
+                            <p className="text-xs text-[var(--text-secondary)] text-center py-3">暂无数据</p>
+                          )}
                         </div>
                       </div>
                     );
                   })}
+                </div>
+              </>
+            ) : (
+              /* 实时排行 */
+              <div className="glass-card p-5">
+                <h3 className="font-bold mb-4 flex items-center gap-2">
+                  <span className="text-green-400">●</span> 实时总排名
+                </h3>
+                <div className="space-y-2">
+                  {[...players]
+                    .map(p => {
+                      const totalQ = p.correct_count + p.wrong_count;
+                      const accuracy = totalQ > 0 ? Math.round((p.correct_count / totalQ) * 100) : 0;
+                      return { ...p, accuracy, totalQ };
+                    })
+                    .sort((a, b) => {
+                      if (b.accuracy !== a.accuracy) return b.accuracy - a.accuracy;
+                      if (b.totalQ !== a.totalQ) return b.totalQ - a.totalQ;
+                      return b.score - a.score;
+                    })
+                    .map((p, i) => (
+                      <div key={p.id} className="flex items-center gap-2 py-2 px-3 rounded-lg bg-[rgba(15,23,42,0.4)]">
+                        <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                          i === 0 ? 'bg-yellow-500 text-black' : i === 1 ? 'bg-gray-400 text-black' : i === 2 ? 'bg-amber-700 text-white' : 'bg-[rgba(148,163,184,0.1)] text-[var(--text-secondary)]'
+                        }`}>{i + 1}</span>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold flex-shrink-0 ${
+                          p.group_label === 'A' ? 'bg-blue-500/20 text-blue-400' : 'bg-yellow-500/20 text-yellow-400'
+                        }`}>{p.group_label}</span>
+                        <span className="flex-1 min-w-0">
+                          <span className="text-sm font-medium">{p.nickname}</span>
+                        </span>
+                        <div className="flex items-center gap-3 flex-shrink-0 text-xs">
+                          <span className="text-blue-400 font-bold">{p.score}分</span>
+                          <span className="text-[var(--text-secondary)]">{p.correct_count}✓{p.wrong_count}✗</span>
+                          <span className={`${p.accuracy >= 80 ? 'text-green-400' : p.accuracy >= 50 ? 'text-yellow-400' : 'text-red-400'} font-medium`}>
+                            {p.totalQ > 0 ? `${p.accuracy}%` : '-'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  {players.length === 0 && (
+                    <p className="text-sm text-[var(--text-secondary)] text-center py-6">暂无玩家加入</p>
+                  )}
                 </div>
               </div>
             )}

@@ -9,13 +9,6 @@ function getAdminClient() {
   );
 }
 
-function getAnonClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-}
-
 // ============================================================
 // AI 游戏助手 API
 // 功能：实时答疑 / 游戏状态查询 / 智能鼓励 / 管理分析
@@ -46,41 +39,55 @@ export async function POST(req: NextRequest) {
 
     // 调用 LLM
     const llmKey = process.env.LLM_API_KEY;
-    const llmBase = process.env.LLM_BASE_URL || 'https://api.deepseek.com';
+    const llmBaseRaw = process.env.LLM_BASE_URL || 'https://api.deepseek.com';
     const llmModel = process.env.LLM_MODEL || 'deepseek-chat';
 
     if (!llmKey) {
-      // 无 LLM key 时使用预设回复
       const fallback = generateFallbackReply(messages[messages.length - 1]?.content || '', context, mode);
       return NextResponse.json({ reply: fallback });
     }
 
-    const response = await fetch(`${llmBase}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${llmKey}`,
-      },
-      body: JSON.stringify({
-        model: llmModel,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          ...messages.slice(-10), // 最近10条消息
-        ],
-        temperature: 0.7,
-        max_tokens: 500,
-      }),
-    });
+    // 规范化 base URL，避免 /v1/v1 重复
+    const llmBase = llmBaseRaw.replace(/\/+v1\/?$/, '');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
 
-    if (!response.ok) {
+    try {
+      const response = await fetch(`${llmBase}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${llmKey}`,
+        },
+        body: JSON.stringify({
+          model: llmModel,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...messages.slice(-10),
+          ],
+          temperature: 0.7,
+          max_tokens: 500,
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        console.warn('LLM API error:', response.status);
+        const fallback = generateFallbackReply(messages[messages.length - 1]?.content || '', context, mode);
+        return NextResponse.json({ reply: fallback });
+      }
+
+      const data = await response.json();
+      const reply = data.choices?.[0]?.message?.content || '抱歉，我暂时无法回答。';
+      return NextResponse.json({ reply });
+    } catch (fetchErr) {
+      clearTimeout(timeout);
+      console.warn('LLM fetch failed, using fallback:', fetchErr instanceof Error ? fetchErr.message : fetchErr);
       const fallback = generateFallbackReply(messages[messages.length - 1]?.content || '', context, mode);
       return NextResponse.json({ reply: fallback });
     }
-
-    const data = await response.json();
-    const reply = data.choices?.[0]?.message?.content || '抱歉，我暂时无法回答。';
-
-    return NextResponse.json({ reply });
   } catch (error) {
     console.error('Game AI error:', error);
     return NextResponse.json({

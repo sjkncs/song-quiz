@@ -17,18 +17,32 @@ interface UseGameRealtimeOptions {
 
 export function useGameRealtime(options: UseGameRealtimeOptions) {
   const { roomId, onBroadcast, onRoomUpdate, onPlayerUpdate, onRoundUpdate } = options;
-  const supabase = useRef(createClient());
-  const broadcastChannelRef = useRef<ReturnType<typeof supabase.current.channel> | null>(null);
+  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null);
+  if (!supabaseRef.current) supabaseRef.current = createClient();
+  const supabase = supabaseRef.current;
+
+  const broadcastChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const [connected, setConnected] = useState(false);
+
+  // 用 ref 保存最新回调，避免闭包陈旧
+  const onBroadcastRef = useRef(onBroadcast);
+  const onRoomUpdateRef = useRef(onRoomUpdate);
+  const onPlayerUpdateRef = useRef(onPlayerUpdate);
+  const onRoundUpdateRef = useRef(onRoundUpdate);
+  // 每次渲染更新 ref
+  onBroadcastRef.current = onBroadcast;
+  onRoomUpdateRef.current = onRoomUpdate;
+  onPlayerUpdateRef.current = onPlayerUpdate;
+  onRoundUpdateRef.current = onRoundUpdate;
 
   // 订阅 Broadcast 频道
   useEffect(() => {
-    const channel = supabase.current.channel(`game:${roomId}`);
+    const channel = supabase.channel(`game:${roomId}`);
     broadcastChannelRef.current = channel;
 
     channel.on('broadcast', { event: 'game_event' }, ({ payload }) => {
       const msg = payload as unknown as GameBroadcast;
-      onBroadcast?.(msg);
+      onBroadcastRef.current?.(msg);
     });
 
     channel.subscribe((status) => {
@@ -36,34 +50,33 @@ export function useGameRealtime(options: UseGameRealtimeOptions) {
     });
 
     return () => {
-      supabase.current.removeChannel(channel);
+      supabase.removeChannel(channel);
       broadcastChannelRef.current = null;
     };
   }, [roomId]);
 
   // 订阅数据库变更（Realtime）
   useEffect(() => {
-    const dbChannel = supabase.current.channel(`db:${roomId}`);
+    const dbChannel = supabase.channel(`db:${roomId}`);
 
     dbChannel
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'game_rooms', filter: `id=eq.${roomId}` },
         (payload) => {
-          onRoomUpdate?.(payload.new as GameRoom);
+          onRoomUpdateRef.current?.(payload.new as GameRoom);
         }
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'game_players', filter: `room_id=eq.${roomId}` },
         async () => {
-          // 重新获取玩家列表
-          const { data } = await supabase.current
+          const { data } = await supabase
             .from('game_players')
             .select('*')
             .eq('room_id', roomId)
             .order('joined_at', { ascending: true });
-          if (data) onPlayerUpdate?.(data as GamePlayer[]);
+          if (data) onPlayerUpdateRef.current?.(data as GamePlayer[]);
         }
       )
       .on(
@@ -71,23 +84,22 @@ export function useGameRealtime(options: UseGameRealtimeOptions) {
         { event: '*', schema: 'public', table: 'game_rounds', filter: `room_id=eq.${roomId}` },
         async (payload) => {
           const roundData = payload.new as GameRound;
-          // 获取关联的题目
           if (roundData.question_id) {
-            const { data: question } = await supabase.current
+            const { data: question } = await supabase
               .from('game_questions')
               .select('*')
               .eq('id', roundData.question_id)
               .single();
-            onRoundUpdate?.({ ...roundData, question: question as GameQuestion });
+            onRoundUpdateRef.current?.({ ...roundData, question: question as GameQuestion });
           } else {
-            onRoundUpdate?.(roundData);
+            onRoundUpdateRef.current?.(roundData);
           }
         }
       )
       .subscribe();
 
     return () => {
-      supabase.current.removeChannel(dbChannel);
+      supabase.removeChannel(dbChannel);
     };
   }, [roomId]);
 
