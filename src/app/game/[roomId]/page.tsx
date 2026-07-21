@@ -10,11 +10,11 @@ import {
 import { useGameRealtime, useAntiCheat, useCountdown, useAnswerTimer } from '@/hooks/useGameRealtime';
 import type {
   GameRoom, GamePlayer, GameQuestion, GameRound,
-  GameAnswer, GameRanking, GroupLabel, GameBroadcast
+  GameAnswer, GameRanking, GameBroadcast
 } from '@/types/game';
 import GameAssistant from '@/components/GameAssistant';
 
-type Phase = 'join' | 'waiting' | 'playing' | 'revealed' | 'finished';
+type Phase = 'loading' | 'waiting' | 'playing' | 'revealed' | 'finished';
 
 function MediaPlayArea({ mediaUrl, mediaType }: { mediaUrl: string; mediaType: string | null }) {
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement>(null);
@@ -83,7 +83,7 @@ export default function GamePage() {
   const roomCode = params.roomId as string;
 
   // 状态
-  const [phase, setPhase] = useState<Phase>('join');
+  const [phase, setPhase] = useState<Phase>('loading');
   const [room, setRoom] = useState<GameRoom | null>(null);
   const [player, setPlayer] = useState<GamePlayer | null>(null);
   const [players, setPlayers] = useState<GamePlayer[]>([]);
@@ -98,11 +98,6 @@ export default function GamePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // 加入表单
-  const [realName, setRealName] = useState('');
-  const [nickname, setNickname] = useState('');
-  const [group, setGroup] = useState<GroupLabel>('A');
-
   // 反作弊
   const antiCheat = useAntiCheat();
   const answerTimer = useAnswerTimer();
@@ -112,37 +107,50 @@ export default function GamePage() {
     timerActive
   );
 
-  // 加载房间信息
+  // 加载房间信息 + 自动加入
   useEffect(() => {
     (async () => {
       try {
+        // 检查是否有首页传来的用户信息
+        const storedRealName = sessionStorage.getItem('real_name');
+        const storedNickname = sessionStorage.getItem('nickname');
+
+        if (!storedRealName || !storedNickname) {
+          // 没有用户信息，跳转回首页
+          router.push('/');
+          return;
+        }
+
+        // 确保已登录
+        const currentUser = await getCurrentUser();
+        if (!currentUser) {
+          await signInAnonymously(storedNickname);
+        }
+
         const r = await getRoomByCode(roomCode);
         setRoom(r);
 
-        // 尝试获取当前玩家
-        const me = await getMyPlayer(r.id);
-        if (me) {
-          setPlayer(me);
-          const allPlayers = await getPlayers(r.id);
-          setPlayers(allPlayers);
+        // 尝试获取当前玩家，如果没有则自动加入
+        let me = await getMyPlayer(r.id);
+        if (!me) {
+          // 自动加入房间，默认A组（主持人稍后调整）
+          me = await joinRoom(r.id, storedRealName, storedNickname, 'A');
+        }
+        setPlayer(me);
 
-          if (r.status === 'finished') {
-            setPhase('finished');
-            const rk = await getRankings(r.id);
-            setRankings(rk);
-          } else if (r.status === 'playing' || r.status === 'starting') {
-            setPhase(r.status === 'starting' ? 'waiting' : 'playing');
-            const round = await getCurrentRound(r.id);
-            if (round) setCurrentRound(round);
-          } else {
-            // waiting 状态且已加入 -> 显示等待界面
-            setPhase('waiting');
-          }
-        } else if (r.status === 'finished') {
-          // 未加入但游戏已结束（旁观）
+        const allPlayers = await getPlayers(r.id);
+        setPlayers(allPlayers);
+
+        if (r.status === 'finished') {
           setPhase('finished');
           const rk = await getRankings(r.id);
           setRankings(rk);
+        } else if (r.status === 'playing' || r.status === 'starting') {
+          setPhase(r.status === 'starting' ? 'waiting' : 'playing');
+          const round = await getCurrentRound(r.id);
+          if (round) setCurrentRound(round);
+        } else {
+          setPhase('waiting');
         }
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : '房间不存在');
@@ -213,33 +221,6 @@ export default function GamePage() {
       }
     }, [antiCheat]),
   });
-
-  // 加入房间
-  const handleJoin = async () => {
-    if (!room || !nickname.trim() || !realName.trim()) {
-      setError('请填写完整信息');
-      return;
-    }
-    setLoading(true);
-    setError('');
-    try {
-      // 确保用户已登录（通过二维码直接进入时需要）
-      const currentUser = await getCurrentUser();
-      if (!currentUser) {
-        await signInAnonymously(nickname.trim());
-      }
-
-      const p = await joinRoom(room.id, realName.trim(), nickname.trim(), group);
-      setPlayer(p);
-      sessionStorage.setItem('nickname', nickname.trim());
-      const allPlayers = await getPlayers(room.id);
-      setPlayers(allPlayers);
-      setPhase('waiting');
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : '加入失败');
-    }
-    setLoading(false);
-  };
 
   // 提交答案
   const handleSubmitAnswer = async () => {
@@ -333,54 +314,16 @@ export default function GamePage() {
     );
   }
 
-  // 加入阶段
-  if (phase === 'join') {
+  // 加载阶段
+  if (phase === 'loading') {
     return (
-      <main className="min-h-[100dvh] flex flex-col items-center justify-center px-6 py-12">
-        <div className="glass-card w-full max-w-sm p-6 space-y-5 animate-slideUp">
-          <div className="text-center mb-2">
-            <h2 className="text-2xl font-bold">加入游戏</h2>
-            <p className="text-sm text-[var(--text-secondary)] mt-1">
-              房间码: <span className="font-mono text-lg text-blue-400">{roomCode}</span>
-            </p>
-          </div>
-
-          <div>
-            <label className="text-xs text-[var(--text-secondary)] mb-1.5 block">真实姓名（仅管理员可见）</label>
-            <input className="input-field" placeholder="你的真实姓名" value={realName} onChange={(e) => setRealName(e.target.value)} maxLength={20}/>
-          </div>
-
-          <div>
-            <label className="text-xs text-[var(--text-secondary)] mb-1.5 block">昵称（排行榜显示）</label>
-            <input className="input-field" placeholder="显示在排行榜的昵称" value={nickname} onChange={(e) => setNickname(e.target.value)} maxLength={20}/>
-          </div>
-
-          <div>
-            <label className="text-xs text-[var(--text-secondary)] mb-1.5 block">选择组别</label>
-            <div className="flex gap-3">
-              {(['A', 'B'] as GroupLabel[]).map((g) => (
-                <button
-                  key={g}
-                  onClick={() => setGroup(g)}
-                  className={`flex-1 py-4 rounded-xl font-bold text-lg transition-all border-2 ${
-                    group === g
-                      ? g === 'A'
-                        ? 'border-blue-500 bg-blue-500/15 text-blue-400'
-                        : 'border-yellow-500 bg-yellow-500/15 text-yellow-400'
-                      : 'border-[var(--glass-border)] text-[var(--text-secondary)]'
-                  }`}
-                >
-                  {g}组
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {error && <p className="text-sm text-red-400 text-center">{error}</p>}
-
-          <button onClick={handleJoin} disabled={loading} className="btn-primary">
-            {loading ? '加入中...' : '确认加入'}
-          </button>
+      <main className="min-h-[100dvh] flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-pulse text-[var(--text-secondary)] mb-2">正在加入游戏...</div>
+          <p className="text-xs text-[var(--text-secondary)]">
+            房间码: <span className="font-mono text-blue-400">{roomCode}</span>
+          </p>
+          {error && <p className="text-sm text-red-400 mt-4">{error}</p>}
         </div>
       </main>
     );
@@ -393,7 +336,7 @@ export default function GamePage() {
 
     return (
       <main className="min-h-[100dvh] px-4 py-8 max-w-lg mx-auto">
-        <div className="text-center mb-8 animate-fadeIn">
+        <div className="text-center mb-6 animate-fadeIn">
           <h2 className="text-2xl font-bold">等待开始</h2>
           <p className="text-sm text-[var(--text-secondary)] mt-1">
             等待主持人开始游戏...
@@ -403,6 +346,13 @@ export default function GamePage() {
               房间码: <span className="font-mono text-blue-400">{room.room_code}</span>
             </p>
           )}
+        </div>
+
+        {/* 在线人数 */}
+        <div className="glass-card p-5 mb-6 text-center">
+          <p className="text-sm text-[var(--text-secondary)] mb-1">当前在线</p>
+          <p className="text-4xl font-bold text-blue-400">{players.length}</p>
+          <p className="text-xs text-[var(--text-secondary)] mt-1">名玩家已加入</p>
         </div>
 
         {/* 两组玩家列表 */}

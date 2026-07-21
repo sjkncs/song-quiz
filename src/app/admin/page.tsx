@@ -2,33 +2,67 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { createRoom, getCurrentUser } from '@/app/game-actions';
+import { createRoom, getCurrentUser, getRoomByCode } from '@/app/game-actions';
 import type { GameRoom } from '@/types/game';
 
 export default function AdminPage() {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [room, setRoom] = useState<GameRoom | null>(null);
   const [error, setError] = useState('');
-  const [customCode, setCustomCode] = useState('');
 
   useEffect(() => {
-    getCurrentUser().then((user) => {
-      if (!user) router.push('/');
-    });
-  }, []);
+    (async () => {
+      // 检查登录状态
+      const user = await getCurrentUser();
+      if (!user) {
+        router.push('/');
+        return;
+      }
+
+      // 尝试获取已存在的房间
+      const roomCode = sessionStorage.getItem('room_code');
+      if (roomCode) {
+        try {
+          const r = await getRoomByCode(roomCode);
+          // 检查是否是当前用户创建的
+          if (r.host_user_id === user.id) {
+            setRoom(r);
+            setLoading(false);
+            return;
+          }
+        } catch {
+          // 房间不存在，继续显示创建界面
+        }
+      }
+      setLoading(false);
+    })();
+  }, [router]);
 
   const handleCreateRoom = async () => {
+    const roomCode = sessionStorage.getItem('room_code');
+    if (!roomCode) {
+      setError('请先返回首页设置房间码');
+      return;
+    }
     setLoading(true);
     setError('');
     try {
-      const r = await createRoom('音乐竞猜PK', customCode.trim() || undefined);
+      const r = await createRoom('音乐竞猜PK', roomCode);
       setRoom(r);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '创建失败');
     }
     setLoading(false);
   };
+
+  if (loading) {
+    return (
+      <main className="min-h-[100dvh] flex items-center justify-center">
+        <div className="animate-pulse text-[var(--text-secondary)]">加载中...</div>
+      </main>
+    );
+  }
 
   // 已创建房间 -> 显示房间信息和QR码
   if (room) {
@@ -40,7 +74,7 @@ export default function AdminPage() {
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-2xl font-bold">管理后台</h1>
-            <p className="text-sm text-[var(--text-secondary)]">游戏房间已创建</p>
+            <p className="text-sm text-[var(--text-secondary)]">房间已就绪</p>
           </div>
           <button
             onClick={() => router.push(`/admin/room/${room.id}`)}
@@ -106,6 +140,8 @@ export default function AdminPage() {
   }
 
   // 未创建房间
+  const roomCode = sessionStorage.getItem('room_code') || '';
+
   return (
     <main className="min-h-[100dvh] flex flex-col items-center justify-center px-6 py-12">
       <div className="glass-card w-full max-w-sm p-8 text-center animate-slideUp">
@@ -115,34 +151,41 @@ export default function AdminPage() {
           </svg>
         </div>
         <h2 className="text-2xl font-bold mb-2">管理后台</h2>
-        <p className="text-sm text-[var(--text-secondary)] mb-6">
+        <p className="text-sm text-[var(--text-secondary)] mb-4">
           创建游戏房间，控制游戏流程
         </p>
 
-        {/* 自定义房间码 */}
-        <div className="mb-4 text-left">
-          <label className="text-xs text-[var(--text-secondary)] mb-1.5 block">自定义房间码（可选）</label>
-          <input
-            type="text"
-            className="input-field text-center text-xl tracking-[0.3em] font-mono uppercase"
-            placeholder="如 0723PK"
-            value={customCode}
-            onChange={(e) => setCustomCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8))}
-            maxLength={8}
-          />
-          <p className="text-xs text-[var(--text-secondary)] mt-1.5 text-center">
-            4-8位字母数字，留空则自动生成
+        {roomCode && (
+          <div className="mb-4">
+            <p className="text-xs text-[var(--text-secondary)]">房间码</p>
+            <p className="text-2xl font-mono font-bold text-blue-400 tracking-widest mt-1">
+              {roomCode}
+            </p>
+          </div>
+        )}
+
+        {!roomCode && (
+          <p className="text-sm text-red-400 mb-4">
+            请先返回首页设置房间码
           </p>
-        </div>
+        )}
 
         {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
         <button
           onClick={handleCreateRoom}
-          disabled={loading}
+          disabled={loading || !roomCode}
           className="btn-primary"
         >
-          {loading ? '创建中...' : '创建新房间'}
+          {loading ? '创建中...' : '创建房间'}
+        </button>
+
+        <button
+          onClick={() => router.push('/')}
+          className="btn-secondary mt-3"
+          style={{ width: 'auto', padding: '10px 20px' }}
+        >
+          返回首页
         </button>
       </div>
     </main>
