@@ -645,11 +645,15 @@ export default function GamePage() {
         {streakMsg && <div className="streak-bubble mb-4">{streakMsg}</div>}
         {warningMsg && <div className="warning-bubble mb-4">{warningMsg}</div>}
 
-        {/* 累计答错惩罚提示 */}
+        {/* 累计答错 - 趣味惩罚提示 */}
         {player && player.wrong_count >= 2 && (
-          <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-center">
-            <p className="text-sm text-red-400 font-medium">
-              ⚠️ 累计答错 {player.wrong_count} 次，请注意准确率！
+          <div className="mb-4 p-3 rounded-lg bg-purple-500/10 border border-purple-500/30 text-center">
+            <p className="text-sm text-purple-300 font-medium">
+              {player.wrong_count === 2
+                ? '🎤 答错2次！准备表演一个节目吧~'
+                : player.wrong_count === 3
+                ? '🍺 答错3次！自罚一杯没商量！'
+                : `😈 已翻车${player.wrong_count}次，惩罚加倍哦~`}
             </p>
           </div>
         )}
@@ -739,11 +743,15 @@ export default function GamePage() {
         {streakMsg && <div className="streak-bubble mb-4">{streakMsg}</div>}
         {warningMsg && <div className="warning-bubble mb-4">{warningMsg}</div>}
 
-        {/* 累计答错惩罚提示 */}
+        {/* 累计答错 - 趣味惩罚提示 */}
         {player && player.wrong_count >= 2 && (
-          <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-center">
-            <p className="text-sm text-red-400 font-medium">
-              ⚠️ 累计答错 {player.wrong_count} 次，请注意准确率！
+          <div className="mb-4 p-3 rounded-lg bg-purple-500/10 border border-purple-500/30 text-center">
+            <p className="text-sm text-purple-300 font-medium">
+              {player.wrong_count === 2
+                ? '🎤 答错2次！准备表演一个节目吧~'
+                : player.wrong_count === 3
+                ? '🍺 答错3次！自罚一杯没商量！'
+                : `😈 已翻车${player.wrong_count}次，惩罚加倍哦~`}
             </p>
           </div>
         )}

@@ -614,14 +614,14 @@ export default function AdminRoomPage() {
                   </div>
                   <div className="space-y-2">
                     {members.map((p) => (
-                      <div key={p.id} className={`py-2 px-3 rounded-lg ${p.wrong_count >= 2 ? 'bg-red-500/5 border border-red-500/20' : 'bg-[rgba(15,23,42,0.4)]'}`}>
+                      <div key={p.id} className={`py-2 px-3 rounded-lg ${p.wrong_count >= 2 ? 'bg-purple-500/5 border border-purple-500/20' : 'bg-[rgba(15,23,42,0.4)]'}`}>
                         <div className="flex items-center gap-2">
                           <span className="flex-1 min-w-0">
                             <span className="text-sm font-medium">{p.nickname}</span>
                             <span className="text-xs text-[var(--text-secondary)] ml-1">({p.real_name})</span>
                             {p.wrong_count >= 2 && (
-                              <span className="ml-2 px-1.5 py-0.5 rounded text-xs bg-red-500/20 text-red-400 font-medium">
-                                答错{p.wrong_count}次
+                              <span className="ml-2 px-1.5 py-0.5 rounded text-xs bg-purple-500/20 text-purple-300 font-medium">
+                                {p.wrong_count === 2 ? '🎤表演节目' : p.wrong_count === 3 ? '🍺罚一杯' : `😈翻车${p.wrong_count}次`}
                               </span>
                             )}
                           </span>
