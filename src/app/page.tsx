@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { signInAnonymously, createRoom, getRoomByCode } from '@/app/game-actions';
+import { signInAnonymously } from '@/app/game-actions';
 
 export default function HomePage() {
   const router = useRouter();
@@ -13,14 +13,6 @@ export default function HomePage() {
   const [error, setError] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
 
-  const validate = () => {
-    if (!realName.trim()) return '请输入真实姓名';
-    if (!nickname.trim()) return '请输入昵称';
-    if (!roomCode.trim()) return '请输入房间码';
-    if (roomCode.trim().length < 4) return '房间码至少4位';
-    return null;
-  };
-
   const storeUserInfo = () => {
     sessionStorage.setItem('real_name', realName.trim());
     sessionStorage.setItem('nickname', nickname.trim());
@@ -28,8 +20,9 @@ export default function HomePage() {
 
   // 玩家加入
   const handleJoin = async () => {
-    const err = validate();
-    if (err) { setError(err); return; }
+    if (!realName.trim()) { setError('请输入真实姓名'); return; }
+    if (!nickname.trim()) { setError('请输入昵称'); return; }
+    if (!roomCode.trim() || roomCode.trim().length < 4) { setError('请输入有效的房间码'); return; }
     setLoading(true);
     setError('');
     try {
@@ -42,29 +35,19 @@ export default function HomePage() {
     setLoading(false);
   };
 
-  // 主持人创建/进入房间
+  // 主持人直接进入后台
   const handleAdmin = async () => {
-    const err = validate();
-    if (err) { setError(err); return; }
+    if (!realName.trim()) { setError('请输入真实姓名'); return; }
+    if (!nickname.trim()) { setError('请输入昵称'); return; }
     setLoading(true);
     setError('');
     try {
       await signInAnonymously(nickname.trim());
       storeUserInfo();
       sessionStorage.setItem('is_admin', 'true');
-
-      const code = roomCode.trim().toUpperCase();
-      // 尝试创建房间（如果已存在会由 admin 页面处理）
-      try {
-        await createRoom('音乐竞猜PK', code);
-      } catch {
-        // 房间可能已存在，忽略创建错误
-      }
-      // 存储房间码供 admin 页面使用
-      sessionStorage.setItem('room_code', code);
       router.push('/admin');
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : '操作失败');
+      setError(e instanceof Error ? e.message : '登录失败');
     }
     setLoading(false);
   };
@@ -137,25 +120,23 @@ export default function HomePage() {
           />
         </div>
 
-        {/* 房间码 */}
-        <div>
-          <label className="text-xs text-[var(--text-secondary)] mb-1.5 block">
-            {isAdmin ? '设置房间码' : '房间码'}
-          </label>
-          <input
-            type="text"
-            className="input-field text-center text-2xl tracking-[0.3em] font-mono uppercase"
-            placeholder={isAdmin ? '如 0723PK' : 'ABC123'}
-            value={roomCode}
-            onChange={(e) => setRoomCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8))}
-            maxLength={8}
-          />
-          <p className="text-xs text-[var(--text-secondary)] mt-1.5 text-center">
-            {isAdmin
-              ? '4-8位字母数字，设定后告知玩家'
-              : '输入主持人提供的房间码'}
-          </p>
-        </div>
+        {/* 房间码（仅玩家） */}
+        {!isAdmin && (
+          <div>
+            <label className="text-xs text-[var(--text-secondary)] mb-1.5 block">房间码</label>
+            <input
+              type="text"
+              className="input-field text-center text-2xl tracking-[0.3em] font-mono uppercase"
+              placeholder="ABC123"
+              value={roomCode}
+              onChange={(e) => setRoomCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8))}
+              maxLength={8}
+            />
+            <p className="text-xs text-[var(--text-secondary)] mt-1.5 text-center">
+              输入主持人提供的房间码
+            </p>
+          </div>
+        )}
 
         {/* 错误提示 */}
         {error && (
@@ -168,7 +149,7 @@ export default function HomePage() {
           disabled={loading}
           className="btn-primary"
         >
-          {loading ? '处理中...' : isAdmin ? '创建房间' : '加入游戏'}
+          {loading ? '处理中...' : isAdmin ? '进入管理后台' : '加入游戏'}
         </button>
       </div>
 

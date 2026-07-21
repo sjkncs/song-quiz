@@ -8,52 +8,50 @@ import type { GameRoom } from '@/types/game';
 export default function AdminPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
   const [room, setRoom] = useState<GameRoom | null>(null);
+  const [customCode, setCustomCode] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
     (async () => {
-      // 检查登录状态
       const user = await getCurrentUser();
       if (!user) {
         router.push('/');
         return;
       }
-
-      // 尝试获取已存在的房间
-      const roomCode = sessionStorage.getItem('room_code');
-      if (roomCode) {
-        try {
-          const r = await getRoomByCode(roomCode);
-          // 检查是否是当前用户创建的
-          if (r.host_user_id === user.id) {
+      // 检查是否有未结束的房间（刷新页面后恢复）
+      try {
+        const code = sessionStorage.getItem('room_code');
+        if (code) {
+          const r = await getRoomByCode(code);
+          if (r.host_user_id === user.id && r.status !== 'finished') {
             setRoom(r);
-            setLoading(false);
-            return;
           }
-        } catch {
-          // 房间不存在，继续显示创建界面
         }
+      } catch {
+        // 房间不存在，忽略
       }
       setLoading(false);
     })();
   }, [router]);
 
   const handleCreateRoom = async () => {
-    const roomCode = sessionStorage.getItem('room_code');
-    if (!roomCode) {
-      setError('请先返回首页设置房间码');
+    if (!customCode.trim() || customCode.trim().length < 4) {
+      setError('房间码至少4位');
       return;
     }
-    setLoading(true);
+    setCreating(true);
     setError('');
     try {
-      const r = await createRoom('音乐竞猜PK', roomCode);
+      const code = customCode.trim().toUpperCase();
+      const r = await createRoom('音乐竞猜PK', code);
+      sessionStorage.setItem('room_code', code);
       setRoom(r);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '创建失败');
     }
-    setLoading(false);
+    setCreating(false);
   };
 
   if (loading) {
@@ -139,9 +137,7 @@ export default function AdminPage() {
     );
   }
 
-  // 未创建房间
-  const roomCode = sessionStorage.getItem('room_code') || '';
-
+  // 未创建房间 — 显示创建界面
   return (
     <main className="min-h-[100dvh] flex flex-col items-center justify-center px-6 py-12">
       <div className="glass-card w-full max-w-sm p-8 text-center animate-slideUp">
@@ -150,34 +146,34 @@ export default function AdminPage() {
             <path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
           </svg>
         </div>
-        <h2 className="text-2xl font-bold mb-2">管理后台</h2>
-        <p className="text-sm text-[var(--text-secondary)] mb-4">
-          创建游戏房间，控制游戏流程
+        <h2 className="text-2xl font-bold mb-2">创建游戏房间</h2>
+        <p className="text-sm text-[var(--text-secondary)] mb-6">
+          设定房间码后告知玩家，即可开始游戏
         </p>
 
-        {roomCode && (
-          <div className="mb-4">
-            <p className="text-xs text-[var(--text-secondary)]">房间码</p>
-            <p className="text-2xl font-mono font-bold text-blue-400 tracking-widest mt-1">
-              {roomCode}
-            </p>
-          </div>
-        )}
-
-        {!roomCode && (
-          <p className="text-sm text-red-400 mb-4">
-            请先返回首页设置房间码
+        <div className="mb-4 text-left">
+          <label className="text-xs text-[var(--text-secondary)] mb-1.5 block">房间码</label>
+          <input
+            type="text"
+            className="input-field text-center text-xl tracking-[0.3em] font-mono uppercase"
+            placeholder="如 0723PK"
+            value={customCode}
+            onChange={(e) => setCustomCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8))}
+            maxLength={8}
+          />
+          <p className="text-xs text-[var(--text-secondary)] mt-1.5 text-center">
+            4-8位字母数字
           </p>
-        )}
+        </div>
 
         {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
         <button
           onClick={handleCreateRoom}
-          disabled={loading || !roomCode}
+          disabled={creating}
           className="btn-primary"
         >
-          {loading ? '创建中...' : '创建房间'}
+          {creating ? '创建中...' : '创建房间'}
         </button>
 
         <button
