@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 
 export async function createClient() {
@@ -27,22 +28,12 @@ export async function createClient() {
 }
 
 // Admin client for operations that bypass RLS (server-side only)
+// Uses standard createClient instead of createServerClient because
+// service role key bypasses RLS and doesn't need cookie-based auth.
+// This avoids issues with cookies() in Serverless Server Action context.
 export async function createAdminClient() {
-  const cookieStore = await cookies()
-  return createServerClient(
+  return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!, // Must be set in .env.local
-    {
-      cookies: {
-        getAll() { return cookieStore.getAll() },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
-          } catch { /* Server Component */ }
-        },
-      },
-    }
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
   )
 }
