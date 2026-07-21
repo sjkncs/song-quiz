@@ -1,6 +1,6 @@
 'use server';
 
-import { createClient } from '@/lib/supabase-server';
+import { createClient, createAdminClient } from '@/lib/supabase-server';
 import { revalidatePath } from 'next/cache';
 import type {
   GameRoom, GamePlayer, GameQuestion, GameRound,
@@ -85,20 +85,23 @@ export async function getRoomByCode(code: string) {
 }
 
 export async function updateRoomStatus(roomId: string, status: GameRoom['status']) {
-  const supabase = await createClient();
+  const supabase = await createAdminClient();
   const { data, error } = await supabase
     .from('game_rooms')
     .update({ status })
     .eq('id', roomId)
     .select()
     .single();
-  if (error) throw new Error('更新房间状态失败');
+  if (error) {
+    console.error('updateRoomStatus error:', error);
+    throw new Error('更新房间状态失败');
+  }
   revalidatePath('/admin');
   return data as GameRoom;
 }
 
 export async function updateCurrentRound(roomId: string, roundNum: number) {
-  const supabase = await createClient();
+  const supabase = await createAdminClient();
   const { error } = await supabase
     .from('game_rooms')
     .update({ current_round: roundNum })
@@ -179,7 +182,7 @@ export async function getMyPlayer(roomId: string) {
 }
 
 export async function assignGroup(playerId: string, group: GroupLabel) {
-  const supabase = await createClient();
+  const supabase = await createAdminClient();
   const { error } = await supabase
     .from('game_players')
     .update({ group_label: group })
@@ -188,7 +191,7 @@ export async function assignGroup(playerId: string, group: GroupLabel) {
 }
 
 export async function removePlayer(playerId: string) {
-  const supabase = await createClient();
+  const supabase = await createAdminClient();
   // 先删除该玩家的排名记录
   const { error: rankErr } = await supabase.from('game_rankings').delete().eq('player_id', playerId);
   if (rankErr) console.warn('清理排名记录失败:', rankErr.message);
@@ -283,7 +286,7 @@ export async function createRound(
   questionId: string,
   timeLimitSec?: number
 ) {
-  const supabase = await createClient();
+  const supabase = await createAdminClient();
   const { data, error } = await supabase
     .from('game_rounds')
     .insert({
@@ -300,7 +303,7 @@ export async function createRound(
 }
 
 export async function startRound(roundId: string) {
-  const supabase = await createClient();
+  const supabase = await createAdminClient();
   const { error } = await supabase
     .from('game_rounds')
     .update({ status: 'active', started_at: new Date().toISOString() })
@@ -309,7 +312,7 @@ export async function startRound(roundId: string) {
 }
 
 export async function revealRound(roundId: string) {
-  const supabase = await createClient();
+  const supabase = await createAdminClient();
   const { error } = await supabase
     .from('game_rounds')
     .update({ status: 'revealed', reveal_at: new Date().toISOString() })
@@ -319,7 +322,7 @@ export async function revealRound(roundId: string) {
 
 // 主持人开放/关闭媒体权限（视频、音频、歌词）
 export async function toggleMediaUnlock(roundId: string, unlocked: boolean) {
-  const supabase = await createClient();
+  const supabase = await createAdminClient();
   const { error } = await supabase
     .from('game_rounds')
     .update({ media_unlocked: unlocked })
@@ -332,7 +335,7 @@ export async function toggleMediaUnlock(roundId: string, unlocked: boolean) {
 // ============================================================
 
 export async function buzzIn(roundId: string, playerId: string) {
-  const supabase = await createClient();
+  const supabase = await createAdminClient();
 
   // 检查是否已有人抢答
   const { data: round } = await supabase
@@ -355,7 +358,7 @@ export async function buzzIn(roundId: string, playerId: string) {
 }
 
 export async function adminResetBuzzIn(roundId: string) {
-  const supabase = await createClient();
+  const supabase = await createAdminClient();
   const { error } = await supabase
     .from('game_rounds')
     .update({ buzzed_in_player_id: null })
@@ -364,7 +367,7 @@ export async function adminResetBuzzIn(roundId: string) {
 }
 
 export async function adminAssignBuzzIn(roundId: string, playerId: string) {
-  const supabase = await createClient();
+  const supabase = await createAdminClient();
   const { error } = await supabase
     .from('game_rounds')
     .update({ buzzed_in_player_id: playerId })
@@ -463,7 +466,7 @@ async function aiJudgeAnswer(
 }
 
 export async function completeRound(roundId: string) {
-  const supabase = await createClient();
+  const supabase = await createAdminClient();
   const { error } = await supabase
     .from('game_rounds')
     .update({ status: 'completed' })
@@ -473,7 +476,7 @@ export async function completeRound(roundId: string) {
 
 // 返回上一题：将当前回合标记为完成，重新激活上一题
 export async function goBackRound(roomId: string) {
-  const supabase = await createClient();
+  const supabase = await createAdminClient();
 
   // 获取当前回合号
   const { data: room } = await supabase
@@ -568,7 +571,7 @@ export async function submitAnswer(
   timeTakenMs: number,
   screenSwitches: number
 ) {
-  const supabase = await createClient();
+  const supabase = await createAdminClient();
 
   // 获取题目信息 + 抢答状态
   const { data: round } = await supabase
@@ -703,7 +706,7 @@ export async function adminSetScore(playerId: string, newScore: number) {
 }
 
 export async function getBonusWinners(roomId: string) {
-  const supabase = await createClient();
+  const supabase = await createAdminClient();
   // 找出所有彩蛋题
   const { data: bonusQuestions } = await supabase
     .from('game_questions')
@@ -759,7 +762,7 @@ export async function adminToggleCorrect(
   answerId: string,
   isCorrect: boolean
 ) {
-  const supabase = await createClient();
+  const supabase = await createAdminClient();
 
   // 先读取答案的旧状态
   const { data: answer } = await supabase
@@ -804,7 +807,7 @@ export async function adminToggleCorrect(
 }
 
 export async function adminGenerateRankings(roomId: string) {
-  const supabase = await createClient();
+  const supabase = await createAdminClient();
 
   // 获取所有玩家
   const { data: players } = await supabase
