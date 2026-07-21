@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   getRoomByCode, getMyPlayer, getPlayers, joinRoom,
-  submitAnswer, getRankings, getCurrentRound
+  submitAnswer, getRankings, getCurrentRound,
+  signInAnonymously, getCurrentUser
 } from '@/app/game-actions';
 import { useGameRealtime, useAntiCheat, useCountdown, useAnswerTimer } from '@/hooks/useGameRealtime';
 import type {
@@ -150,6 +151,12 @@ export default function GamePage() {
     setLoading(true);
     setError('');
     try {
+      // 确保用户已登录（通过二维码直接进入时需要）
+      const currentUser = await getCurrentUser();
+      if (!currentUser) {
+        await signInAnonymously(nickname.trim());
+      }
+
       const p = await joinRoom(room.id, realName.trim(), nickname.trim(), group);
       setPlayer(p);
       sessionStorage.setItem('nickname', nickname.trim());
