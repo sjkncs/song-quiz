@@ -693,6 +693,68 @@ export async function adminApplyScore(playerId: string, points: number) {
   });
 }
 
+export async function adminSetScore(playerId: string, newScore: number) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('game_players')
+    .update({ score: Math.max(0, newScore) })
+    .eq('id', playerId);
+  if (error) throw new Error('设置积分失败');
+}
+
+export async function getBonusWinners(roomId: string) {
+  const supabase = await createClient();
+  // 找出所有彩蛋题
+  const { data: bonusQuestions } = await supabase
+    .from('game_questions')
+    .select('id, bonus_message')
+    .eq('is_bonus', true);
+
+  if (!bonusQuestions || bonusQuestions.length === 0) return [];
+
+  const bonusIds = bonusQuestions.map(q => q.id);
+  const bonusMap = new Map(bonusQuestions.map(q => [q.id, q.bonus_message || '请领取奖励']));
+
+  // 找出答对彩蛋题的玩家
+  const { data: answers } = await supabase
+    .from('game_answers')
+    .select('player_id, round_id, player:game_players(nickname)')
+    .eq('room_id', roomId)
+    .eq('is_correct', true);
+
+  if (!answers) return [];
+
+  // 通过 round 关联 question
+  const { data: rounds } = await supabase
+    .from('game_rounds')
+    .select('id, question_id')
+    .eq('room_id', roomId);
+
+  const roundQuestionMap = new Map((rounds || []).map(r => [r.id, r.question_id]));
+
+  const winners: { player_id: string; nickname: string; bonus_message: string }[] = [];
+  const seen = new Set<string>();
+
+  for (const ans of answers) {
+    const qId = roundQuestionMap.get((ans as { round_id: string }).round_id);
+    if (qId && bonusIds.includes(qId)) {
+      const key = `${ans.player_id}-${qId}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const playerData = (ans as any).player;
+        winners.push({
+          player_id: ans.player_id,
+          nickname: playerData?.nickname || '未知',
+          bonus_message: bonusMap.get(qId) || '请领取奖励',
+        });
+      }
+    }
+  }
+
+  return winners;
+}
+
 export async function adminToggleCorrect(
   answerId: string,
   isCorrect: boolean

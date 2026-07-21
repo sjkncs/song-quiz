@@ -7,8 +7,8 @@ import {
   updateRoomStatus, updateCurrentRound, createRound,
   startRound, revealRound, completeRound, goBackRound, toggleMediaUnlock,
   adminResetBuzzIn, adminAssignBuzzIn,
-  getRoundAnswers, assignGroup, adminApplyScore, removePlayer,
-  adminGenerateRankings, getRankings,
+  getRoundAnswers, assignGroup, adminApplyScore, adminSetScore, removePlayer,
+  adminGenerateRankings, getRankings, getBonusWinners,
 } from '@/app/game-actions';
 import { useGameRealtime } from '@/hooks/useGameRealtime';
 import GameAssistant from '@/components/GameAssistant';
@@ -34,6 +34,8 @@ export default function AdminRoomPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [scoreInputs, setScoreInputs] = useState<Record<string, string>>({});
+  const [bonusWinners, setBonusWinners] = useState<{ nickname: string; bonus_message: string }[]>([]);
 
   // 初始化
   useEffect(() => {
@@ -60,6 +62,12 @@ export default function AdminRoomPage() {
           const rk = await getRankings(roomId);
           setRankings(rk);
         }
+
+        // 加载彩蛋奖励获得者
+        try {
+          const bw = await getBonusWinners(roomId);
+          setBonusWinners(bw);
+        } catch {}
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : '加载失败');
       }
@@ -87,6 +95,13 @@ export default function AdminRoomPage() {
         }
         const p = await getPlayers(roomId);
         setPlayers(p);
+        // 刷新彩蛋奖励
+        if (msg.type === 'player_answer') {
+          try {
+            const bw = await getBonusWinners(roomId);
+            setBonusWinners(bw);
+          } catch {}
+        }
       }
     }, [currentRound, roomId]),
   });
@@ -302,6 +317,21 @@ export default function AdminRoomPage() {
       setPlayers(p);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '移除失败');
+    }
+  };
+
+  const handleSetScore = async (playerId: string) => {
+    const val = scoreInputs[playerId];
+    if (val === undefined || val === '') return;
+    const num = parseInt(val, 10);
+    if (isNaN(num)) return;
+    try {
+      await adminSetScore(playerId, num);
+      const p = await getPlayers(roomId);
+      setPlayers(p);
+      setScoreInputs(prev => ({ ...prev, [playerId]: '' }));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '设置积分失败');
     }
   };
 
@@ -560,56 +590,64 @@ export default function AdminRoomPage() {
         {/* 玩家管理 */}
         {tab === 'players' && (
           <div className="space-y-4">
-            <div className="grid md:grid-cols-2 gap-4">
-              {/* A组 */}
-              <div className="glass-card p-5">
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="group-badge group-a">A</span>
-                  <span className="font-bold text-blue-400">A组 ({groupA.length}人)</span>
-                </div>
-                <div className="space-y-2">
-                  {groupA.map((p) => (
-                    <div key={p.id} className="flex items-center gap-2 py-2 px-3 rounded-lg bg-[rgba(15,23,42,0.4)]">
-                      <span className="flex-1 min-w-0">
-                        <span className="text-sm font-medium">{p.nickname}</span>
-                        <span className="text-xs text-[var(--text-secondary)] ml-1">({p.real_name})</span>
-                      </span>
-                      <span className="text-sm font-bold text-blue-400 w-10 text-right">{p.score}</span>
-                      <div className="flex gap-1 flex-shrink-0">
-                        <button onClick={() => handleAddScore(p.id, 100)} className="w-7 h-7 rounded-md bg-green-500/20 text-green-400 text-xs font-bold hover:bg-green-500/30" title="+100分">+</button>
-                        <button onClick={() => handleAddScore(p.id, -100)} className="w-7 h-7 rounded-md bg-red-500/20 text-red-400 text-xs font-bold hover:bg-red-500/30" title="-100分">-</button>
-                        <button onClick={() => handleAssignGroup(p.id, 'B')} className="w-7 h-7 rounded-md bg-yellow-500/20 text-yellow-400 text-xs font-bold hover:bg-yellow-500/30" title="移到B组">B</button>
-                        <button onClick={() => handleRemovePlayer(p.id, p.nickname)} className="w-7 h-7 rounded-md bg-gray-500/20 text-gray-400 text-xs font-bold hover:bg-gray-500/30" title="移除">x</button>
-                      </div>
-                    </div>
+            {/* 彩蛋奖励获得者 */}
+            {bonusWinners.length > 0 && (
+              <div className="glass-card p-4 border border-yellow-500/30 bg-yellow-500/5">
+                <h3 className="font-bold text-yellow-400 mb-2">🎁 彩蛋奖励</h3>
+                <div className="space-y-1">
+                  {bonusWinners.map((w, i) => (
+                    <p key={i} className="text-sm">
+                      <span className="font-medium text-yellow-300">{w.nickname}</span>
+                      <span className="text-[var(--text-secondary)] ml-2">— {w.bonus_message}</span>
+                    </p>
                   ))}
                 </div>
               </div>
+            )}
 
-              {/* B组 */}
-              <div className="glass-card p-5">
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="group-badge group-b">B</span>
-                  <span className="font-bold text-yellow-400">B组 ({groupB.length}人)</span>
-                </div>
-                <div className="space-y-2">
-                  {groupB.map((p) => (
-                    <div key={p.id} className="flex items-center gap-2 py-2 px-3 rounded-lg bg-[rgba(15,23,42,0.4)]">
-                      <span className="flex-1 min-w-0">
-                        <span className="text-sm font-medium">{p.nickname}</span>
-                        <span className="text-xs text-[var(--text-secondary)] ml-1">({p.real_name})</span>
-                      </span>
-                      <span className="text-sm font-bold text-yellow-400 w-10 text-right">{p.score}</span>
-                      <div className="flex gap-1 flex-shrink-0">
-                        <button onClick={() => handleAddScore(p.id, 100)} className="w-7 h-7 rounded-md bg-green-500/20 text-green-400 text-xs font-bold hover:bg-green-500/30" title="+100分">+</button>
-                        <button onClick={() => handleAddScore(p.id, -100)} className="w-7 h-7 rounded-md bg-red-500/20 text-red-400 text-xs font-bold hover:bg-red-500/30" title="-100分">-</button>
-                        <button onClick={() => handleAssignGroup(p.id, 'A')} className="w-7 h-7 rounded-md bg-blue-500/20 text-blue-400 text-xs font-bold hover:bg-blue-500/30" title="移到A组">A</button>
-                        <button onClick={() => handleRemovePlayer(p.id, p.nickname)} className="w-7 h-7 rounded-md bg-gray-500/20 text-gray-400 text-xs font-bold hover:bg-gray-500/30" title="移除">x</button>
+            <div className="grid md:grid-cols-2 gap-4">
+              {([['A', groupA, 'blue'] as const, ['B', groupB, 'yellow'] as const]).map(([group, members, color]) => (
+                <div key={group} className="glass-card p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <span className={`group-badge group-${group.toLowerCase()}`}>{group}</span>
+                    <span className={`font-bold text-${color}-400`}>{group}组 ({members.length}人)</span>
+                  </div>
+                  <div className="space-y-2">
+                    {members.map((p) => (
+                      <div key={p.id} className={`py-2 px-3 rounded-lg ${p.wrong_count >= 2 ? 'bg-red-500/5 border border-red-500/20' : 'bg-[rgba(15,23,42,0.4)]'}`}>
+                        <div className="flex items-center gap-2">
+                          <span className="flex-1 min-w-0">
+                            <span className="text-sm font-medium">{p.nickname}</span>
+                            <span className="text-xs text-[var(--text-secondary)] ml-1">({p.real_name})</span>
+                            {p.wrong_count >= 2 && (
+                              <span className="ml-2 px-1.5 py-0.5 rounded text-xs bg-red-500/20 text-red-400 font-medium">
+                                答错{p.wrong_count}次
+                              </span>
+                            )}
+                          </span>
+                          <span className={`text-sm font-bold text-${color}-400 w-12 text-right`}>{p.score}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-1.5">
+                          <input
+                            type="number"
+                            placeholder="积分"
+                            value={scoreInputs[p.id] || ''}
+                            onChange={(e) => setScoreInputs(prev => ({ ...prev, [p.id]: e.target.value }))}
+                            onKeyDown={(e) => e.key === 'Enter' && handleSetScore(p.id)}
+                            className="w-16 h-7 rounded text-xs bg-[rgba(15,23,42,0.6)] border border-[var(--glass-border)] text-center text-white px-1"
+                          />
+                          <button onClick={() => handleSetScore(p.id)} className="h-7 px-2 rounded text-xs bg-blue-500/20 text-blue-400 hover:bg-blue-500/30" title="设为该积分">设</button>
+                          <button onClick={() => handleAddScore(p.id, 100)} className="h-7 w-7 rounded bg-green-500/20 text-green-400 text-xs font-bold hover:bg-green-500/30" title="+100分">+</button>
+                          <button onClick={() => handleAddScore(p.id, -100)} className="h-7 w-7 rounded bg-red-500/20 text-red-400 text-xs font-bold hover:bg-red-500/30" title="-100分">-</button>
+                          <div className="flex-1" />
+                          <button onClick={() => handleAssignGroup(p.id, group === 'A' ? 'B' : 'A')} className={`h-7 w-7 rounded text-xs font-bold bg-${group === 'A' ? 'yellow' : 'blue'}-500/20 text-${group === 'A' ? 'yellow' : 'blue'}-400 hover:bg-${group === 'A' ? 'yellow' : 'blue'}-500/30`} title={`移到${group === 'A' ? 'B' : 'A'}组`}>{group === 'A' ? 'B' : 'A'}</button>
+                          <button onClick={() => handleRemovePlayer(p.id, p.nickname)} className="h-7 w-7 rounded bg-gray-500/20 text-gray-400 text-xs font-bold hover:bg-gray-500/30" title="移除">x</button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
+              ))}
             </div>
           </div>
         )}

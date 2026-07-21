@@ -644,6 +644,30 @@ export default function GamePage() {
         {/* 激励/警告消息 */}
         {streakMsg && <div className="streak-bubble mb-4">{streakMsg}</div>}
         {warningMsg && <div className="warning-bubble mb-4">{warningMsg}</div>}
+
+        {/* 累计答错惩罚提示 */}
+        {player && player.wrong_count >= 2 && (
+          <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-center">
+            <p className="text-sm text-red-400 font-medium">
+              ⚠️ 累计答错 {player.wrong_count} 次，请注意准确率！
+            </p>
+          </div>
+        )}
+
+        {/* 彩蛋奖励提示 */}
+        {myAnswer?.is_correct && currentRound.question?.is_bonus && (
+          <div className="mb-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-center animate-fadeIn">
+            <p className="text-sm font-bold text-yellow-400">
+              🎁 {player?.nickname}，请领取奖励！
+            </p>
+            {currentRound.question.bonus_message && (
+              <p className="text-xs text-[var(--text-secondary)] mt-1">
+                {currentRound.question.bonus_message}
+              </p>
+            )}
+          </div>
+        )}
+
         <GameAssistant roomId={room?.id} playerId={player?.id} mode="player" />
       </main>
     );
@@ -714,6 +738,28 @@ export default function GamePage() {
         {/* 激励/警告 */}
         {streakMsg && <div className="streak-bubble mb-4">{streakMsg}</div>}
         {warningMsg && <div className="warning-bubble mb-4">{warningMsg}</div>}
+
+        {/* 累计答错惩罚提示 */}
+        {player && player.wrong_count >= 2 && (
+          <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-center">
+            <p className="text-sm text-red-400 font-medium">
+              ⚠️ 累计答错 {player.wrong_count} 次，请注意准确率！
+            </p>
+          </div>
+        )}
+
+        {/* 彩蛋奖励 - 答对彩蛋题 */}
+        {isCorrect && q.is_bonus && (
+          <div className="mb-4 p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-center animate-fadeIn">
+            <div className="text-3xl mb-2">🎁</div>
+            <p className="text-base font-bold text-yellow-400">
+              {player?.nickname}，请领取奖励！
+            </p>
+            {q.bonus_message && (
+              <p className="text-sm text-[var(--text-secondary)] mt-1">{q.bonus_message}</p>
+            )}
+          </div>
+        )}
 
         <div className="text-center text-sm text-[var(--text-secondary)] mt-8">
           等待下一题...
