@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import {
   getRoom, getPlayers, getActiveQuestions, getCurrentRound,
   updateRoomStatus, updateCurrentRound, createRound,
-  startRound, revealRound, completeRound,
+  startRound, revealRound, completeRound, goBackRound,
   getRoundAnswers, assignGroup, adminApplyScore, removePlayer,
   adminGenerateRankings, getRankings,
 } from '@/app/game-actions';
@@ -117,6 +117,31 @@ export default function AdminRoomPage() {
       await broadcast({
         type: 'round_start',
         payload: { round_number: 1, round: roundWithQuestion },
+      });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '操作失败');
+    }
+    setActionLoading(false);
+  };
+
+  const handleGoBack = async () => {
+    if (!room || !currentRound) return;
+    setActionLoading(true);
+    setError('');
+    try {
+      // 将当前回合完成，回到上一题
+      await completeRound(currentRound.id);
+      const prevRound = await goBackRound(room.id);
+      // 重新获取上一题的完整数据
+      const round = await getCurrentRound(room.id);
+      if (round) {
+        setCurrentRound(round);
+        setAnswers([]);
+      }
+      // 广播上一题开始
+      await broadcast({
+        type: 'round_start',
+        payload: { round_number: (room.current_round || 1) - 1, round: round || undefined },
       });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '操作失败');
@@ -341,6 +366,11 @@ export default function AdminRoomPage() {
                     揭晓答案
                   </button>
                 )}
+                {(room?.status === 'starting' || room?.status === 'playing') && (room.current_round || 0) > 1 && (
+                  <button onClick={handleGoBack} disabled={actionLoading} className="btn-secondary" style={{ width: 'auto', padding: '12px 24px', opacity: 0.8 }}>
+                    ← 上一题
+                  </button>
+                )}
                 {(room?.status === 'starting' || room?.status === 'playing') && (
                   <button onClick={handleNextQuestion} disabled={actionLoading} className="btn-secondary" style={{ width: 'auto', padding: '12px 24px' }}>
                     {currentRound?.status === 'revealed' ? `下一题 (${room.current_round + 1}/${questions.length})` : '跳过/下一题'}
@@ -375,6 +405,29 @@ export default function AdminRoomPage() {
                     </span>
                   </div>
                 </div>
+                {/* 媒体播放器 - 仅主持人可见 */}
+                {currentRound.question.media_url && (
+                  <div className="mb-4 rounded-xl overflow-hidden bg-black/30">
+                    {(currentRound.question.media_type === 'video' || (currentRound.question.type === 'video_clip')) ? (
+                      <video
+                        src={currentRound.question.media_url}
+                        controls
+                        autoPlay
+                        className="w-full max-h-64 object-contain"
+                        playsInline
+                      />
+                    ) : (currentRound.question.media_type === 'audio' || currentRound.question.type === 'song_guess') ? (
+                      <div className="p-4 flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0 animate-pulse">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+                            <polygon points="5 3 19 12 5 21 5 3"/>
+                          </svg>
+                        </div>
+                        <audio src={currentRound.question.media_url} controls autoPlay className="flex-1 h-10" playsInline/>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
                 <p className="text-sm leading-relaxed mb-3">{currentRound.question.question_text}</p>
                 <div className="text-sm text-[var(--text-secondary)]">
                   正确答案: <span className="text-green-400 font-medium">{currentRound.question.correct_answer}</span>

@@ -457,6 +457,26 @@ export default function GamePage() {
           </div>
         </div>
 
+        {/* 实时组别积分对比 */}
+        {(() => {
+          const scoreA = players.filter(p => p.group_label === 'A').reduce((s, p) => s + (p.score || 0), 0);
+          const scoreB = players.filter(p => p.group_label === 'B').reduce((s, p) => s + (p.score || 0), 0);
+          const total = Math.max(scoreA + scoreB, 1);
+          const pctA = Math.round((scoreA / total) * 100);
+          return (
+            <div className="glass-card p-3 mb-4">
+              <div className="flex items-center justify-between text-xs mb-1.5">
+                <span className="text-blue-400 font-medium">A组 {scoreA}分</span>
+                <span className="text-yellow-400 font-medium">B组 {scoreB}分</span>
+              </div>
+              <div className="h-3 bg-[rgba(148,163,184,0.1)] rounded-full overflow-hidden flex">
+                <div className="bg-gradient-to-r from-blue-500 to-blue-400 h-full transition-all duration-700 rounded-l-full" style={{ width: `${pctA}%` }} />
+                <div className="bg-gradient-to-r from-yellow-400 to-yellow-500 h-full transition-all duration-700 rounded-r-full flex-1" />
+              </div>
+            </div>
+          );
+        })()}
+
         {/* 彩蛋/难度提示 */}
         {isBonus && (
           <div className="bonus-bubble mb-4 animate-fadeIn">
@@ -500,12 +520,19 @@ export default function GamePage() {
             )}
           </div>
 
-          {/* 媒体播放器 */}
+          {/* 媒体播放器 - 玩家端隐藏，仅主持人可见 */}
           {q.media_url && (
-            <MediaPlayArea
-              mediaUrl={q.media_url}
-              mediaType={q.media_type || (q.type === 'video_clip' ? 'video' : q.type === 'song_guess' || q.type === 'dialect' ? 'audio' : null)}
-            />
+            <div className="mb-4 rounded-xl overflow-hidden bg-[rgba(15,23,42,0.6)] border border-[var(--glass-border)] p-6 text-center">
+              <div className="text-3xl mb-3">
+                {q.type === 'video_clip' ? '🎬' : q.type === 'song_guess' ? '🎵' : '🔊'}
+              </div>
+              <p className="text-sm text-[var(--text-secondary)] mb-3">
+                {q.type === 'video_clip' ? '影视片段播放中...' : '音频播放中...'}
+              </p>
+              <p className="text-xs text-[var(--text-secondary)]">
+                媒体内容仅在主持人控制台显示
+              </p>
+            </div>
           )}
 
           {/* 题目文字 */}
@@ -573,18 +600,25 @@ export default function GamePage() {
   if (phase === 'revealed' && currentRound?.question) {
     const q = currentRound.question;
     const isCorrect = myAnswer?.is_correct;
+    const currentStreak = player?.streak || 0;
 
     return (
       <main className="min-h-[100dvh] px-4 py-6 max-w-lg mx-auto">
-        <div className="text-center mb-6 animate-fadeIn">
-          <div className="text-6xl mb-3">{isCorrect ? '&#x2705;' : '&#x274C;'}</div>
+        <div className={`text-center mb-6 animate-fadeIn ${isCorrect ? 'correct-celebration' : 'wrong-shake'}`}>
+          <div className="text-6xl mb-3">{isCorrect ? '🎉' : '😅'}</div>
           <h2 className={`text-2xl font-bold ${isCorrect ? 'text-green-400' : 'text-red-400'}`}>
             {isCorrect ? '回答正确！' : '回答错误'}
           </h2>
           {isCorrect && (
-            <p className="text-lg font-bold text-blue-400 mt-2 animate-scorePop">
+            <p className="text-lg font-bold text-blue-400 mt-2">
               +{myAnswer?.points_earned || 0} 分
             </p>
+          )}
+          {/* 连击火焰效果 */}
+          {isCorrect && currentStreak >= 2 && (
+            <div className="streak-fire mt-3 inline-block">
+              🔥 连对 {currentStreak} 题！
+            </div>
           )}
         </div>
 

@@ -326,6 +326,70 @@ export async function completeRound(roundId: string) {
   if (error) throw new Error('完成回合失败');
 }
 
+// 返回上一题：将当前回合标记为完成，重新激活上一题
+export async function goBackRound(roomId: string) {
+  const supabase = await createClient();
+
+  // 获取当前回合号
+  const { data: room } = await supabase
+    .from('game_rooms')
+    .select('current_round')
+    .eq('id', roomId)
+    .single();
+
+  if (!room || !room.current_round || room.current_round <= 1) {
+    throw new Error('已经是第一题了');
+  }
+
+  const prevRoundNum = room.current_round - 1;
+
+  // 将当前回合设为 completed
+  const { data: currentRound } = await supabase
+    .from('game_rounds')
+    .select('id')
+    .eq('room_id', roomId)
+    .eq('round_number', room.current_round)
+    .single();
+
+  if (currentRound) {
+    await supabase
+      .from('game_rounds')
+      .update({ status: 'completed' })
+      .eq('id', currentRound.id);
+  }
+
+  // 找到上一题的 round 并重新激活
+  const { data: prevRound } = await supabase
+    .from('game_rounds')
+    .select('id')
+    .eq('room_id', roomId)
+    .eq('round_number', prevRoundNum)
+    .single();
+
+  if (!prevRound) throw new Error('找不到上一题');
+
+  // 重置上一题状态为 active
+  await supabase
+    .from('game_rounds')
+    .update({ status: 'active' })
+    .eq('id', prevRound.id);
+
+  // 删除上一题的所有答题记录（让玩家重新作答）
+  await supabase
+    .from('game_answers')
+    .delete()
+    .eq('round_id', prevRound.id);
+
+  // 更新房间的 current_round
+  await supabase
+    .from('game_rooms')
+    .update({ current_round: prevRoundNum })
+    .eq('id', roomId);
+
+  revalidatePath('/admin');
+  return prevRound;
+}
+
 export async function getCurrentRound(roomId: string) {
   const supabase = await createClient();
   const { data: room } = await supabase

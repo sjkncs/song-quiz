@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { signInAnonymously } from '@/app/game-actions';
+import { signInAnonymously, getCurrentUser } from '@/app/game-actions';
 
 export default function HomePage() {
   const router = useRouter();
@@ -12,10 +12,50 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [lastRoom, setLastRoom] = useState<{ code: string; isAdmin: boolean; realName: string; nickname: string } | null>(null);
+
+  // 检查是否有上次房间记录（用于快速重连）
+  useEffect(() => {
+    const saved = localStorage.getItem('last_room');
+    if (saved) {
+      try { setLastRoom(JSON.parse(saved)); } catch {}
+    }
+  }, []);
 
   const storeUserInfo = () => {
     sessionStorage.setItem('real_name', realName.trim());
     sessionStorage.setItem('nickname', nickname.trim());
+    // 同时保存到 localStorage 以便重连
+    localStorage.setItem('last_room', JSON.stringify({
+      code: roomCode.trim().toUpperCase(),
+      isAdmin,
+      realName: realName.trim(),
+      nickname: nickname.trim(),
+    }));
+  };
+
+  // 快速返回上次的房间
+  const handleReconnect = async () => {
+    if (!lastRoom) return;
+    setLoading(true);
+    try {
+      const user = await getCurrentUser();
+      if (!user) {
+        await signInAnonymously(lastRoom.nickname);
+      }
+      sessionStorage.setItem('real_name', lastRoom.realName);
+      sessionStorage.setItem('nickname', lastRoom.nickname);
+      if (lastRoom.isAdmin) {
+        sessionStorage.setItem('is_admin', 'true');
+        sessionStorage.setItem('room_code', lastRoom.code);
+        router.push('/admin');
+      } else {
+        router.push(`/game/${lastRoom.code}`);
+      }
+    } catch {
+      setError('重连失败，请重新登录');
+    }
+    setLoading(false);
   };
 
   // 玩家加入
@@ -71,6 +111,26 @@ export default function HomePage() {
           音乐影视知识对战 - 多人组队PK
         </p>
       </div>
+
+      {/* 快速重连卡片 */}
+      {lastRoom && (
+        <div className="glass-card w-full max-w-sm p-4 mb-4 animate-slideUp">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-[var(--text-secondary)]">上次的房间</p>
+              <p className="font-mono text-lg text-blue-400 tracking-widest">{lastRoom.code}</p>
+              <p className="text-xs text-[var(--text-secondary)]">{lastRoom.isAdmin ? '主持人' : '玩家'} · {lastRoom.nickname}</p>
+            </div>
+            <button
+              onClick={handleReconnect}
+              disabled={loading}
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white text-sm font-medium shadow-md disabled:opacity-50"
+            >
+              快速返回
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 登录卡片 */}
       <div className="glass-card w-full max-w-sm p-6 space-y-5 animate-slideUp">
