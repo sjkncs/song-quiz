@@ -180,6 +180,11 @@ export default function GamePage() {
         case 'round_reveal':
           setPhase('revealed');
           break;
+        case 'media_unlock':
+          if (currentRound && msg.payload.round_id === currentRound.id) {
+            setCurrentRound({ ...currentRound, media_unlocked: msg.payload.unlocked as boolean });
+          }
+          break;
         case 'round_complete':
           // 刷新排名（加随机延迟避免雷群效应）
           if (room) {
@@ -520,19 +525,29 @@ export default function GamePage() {
             )}
           </div>
 
-          {/* 媒体播放器 - 玩家端隐藏，仅主持人可见 */}
+          {/* 媒体播放器 - 主持人开放后可见 */}
           {q.media_url && (
-            <div className="mb-4 rounded-xl overflow-hidden bg-[rgba(15,23,42,0.6)] border border-[var(--glass-border)] p-6 text-center">
-              <div className="text-3xl mb-3">
-                {q.type === 'video_clip' ? '🎬' : q.type === 'song_guess' ? '🎵' : '🔊'}
+            currentRound.media_unlocked ? (
+              <MediaPlayArea
+                mediaUrl={q.media_url}
+                mediaType={q.media_type || (q.type === 'video_clip' ? 'video' : q.type === 'song_guess' || q.type === 'dialect' ? 'audio' : null)}
+              />
+            ) : (
+              <div className="mb-4 rounded-xl overflow-hidden bg-[rgba(15,23,42,0.6)] border border-[var(--glass-border)] p-6 text-center">
+                <div className="text-3xl mb-3">
+                  {q.type === 'video_clip' ? '🎬' : q.type === 'song_guess' ? '🎵' : '🔊'}
+                </div>
+                <p className="text-sm text-[var(--text-secondary)] mb-3">
+                  {q.type === 'video_clip' ? '影视片段播放中...' : '音频播放中...'}
+                </p>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  媒体内容仅在主持人控制台显示
+                </p>
+                <p className="text-xs text-blue-400 mt-2">
+                  等待主持人开放权限...
+                </p>
               </div>
-              <p className="text-sm text-[var(--text-secondary)] mb-3">
-                {q.type === 'video_clip' ? '影视片段播放中...' : '音频播放中...'}
-              </p>
-              <p className="text-xs text-[var(--text-secondary)]">
-                媒体内容仅在主持人控制台显示
-              </p>
-            </div>
+            )
           )}
 
           {/* 题目文字 */}

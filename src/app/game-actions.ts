@@ -317,6 +317,16 @@ export async function revealRound(roundId: string) {
   if (error) throw new Error('揭晓答案失败');
 }
 
+// 主持人开放/关闭媒体权限（视频、音频、歌词）
+export async function toggleMediaUnlock(roundId: string, unlocked: boolean) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('game_rounds')
+    .update({ media_unlocked: unlocked })
+    .eq('id', roundId);
+  if (error) throw new Error('切换媒体权限失败');
+}
+
 export async function completeRound(roundId: string) {
   const supabase = await createClient();
   const { error } = await supabase

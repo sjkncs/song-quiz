@@ -94,6 +94,7 @@ export interface GameRound {
   time_limit_sec: number;
   reveal_at: string | null;
   points_multiplier: number;
+  media_unlocked: boolean;
   // join
   question?: GameQuestion;
 }
@@ -167,6 +168,7 @@ export type GameBroadcastType =
   | 'yellow_card'
   | 'timer_sync'
   | 'score_update'
+  | 'media_unlock'
   | 'admin_override';
 
 export interface GameBroadcast {

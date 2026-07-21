@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import {
   getRoom, getPlayers, getActiveQuestions, getCurrentRound,
   updateRoomStatus, updateCurrentRound, createRound,
-  startRound, revealRound, completeRound, goBackRound,
+  startRound, revealRound, completeRound, goBackRound, toggleMediaUnlock,
   getRoundAnswers, assignGroup, adminApplyScore, removePlayer,
   adminGenerateRankings, getRankings,
 } from '@/app/game-actions';
@@ -122,6 +122,21 @@ export default function AdminRoomPage() {
       setError(e instanceof Error ? e.message : '操作失败');
     }
     setActionLoading(false);
+  };
+
+  const handleToggleMedia = async () => {
+    if (!currentRound) return;
+    const newUnlocked = !currentRound.media_unlocked;
+    try {
+      await toggleMediaUnlock(currentRound.id, newUnlocked);
+      setCurrentRound({ ...currentRound, media_unlocked: newUnlocked });
+      await broadcast({
+        type: 'media_unlock',
+        payload: { round_id: currentRound.id, unlocked: newUnlocked },
+      });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '操作失败');
+    }
   };
 
   const handleGoBack = async () => {
@@ -407,6 +422,7 @@ export default function AdminRoomPage() {
                 </div>
                 {/* 媒体播放器 - 仅主持人可见 */}
                 {currentRound.question.media_url && (
+                  <>
                   <div className="mb-4 rounded-xl overflow-hidden bg-black/30">
                     {(currentRound.question.media_type === 'video' || (currentRound.question.type === 'video_clip')) ? (
                       <video
@@ -427,6 +443,18 @@ export default function AdminRoomPage() {
                       </div>
                     ) : null}
                   </div>
+                  {/* 媒体权限开关 */}
+                  <button
+                    onClick={handleToggleMedia}
+                    className={`mt-2 px-4 py-2 rounded-lg text-xs font-medium transition-all ${
+                      currentRound.media_unlocked
+                        ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                        : 'bg-[rgba(148,163,184,0.1)] text-[var(--text-secondary)] border border-[var(--glass-border)]'
+                    }`}
+                  >
+                    {currentRound.media_unlocked ? '🔓 玩家可见媒体' : '🔒 玩家不可见媒体'}
+                  </button>
+                  </>
                 )}
                 <p className="text-sm leading-relaxed mb-3">{currentRound.question.question_text}</p>
                 <div className="text-sm text-[var(--text-secondary)]">
