@@ -6,7 +6,7 @@ import {
   getRoom, getPlayers, getActiveQuestions, getCurrentRound,
   updateRoomStatus, updateCurrentRound, createRound,
   startRound, revealRound, completeRound,
-  getRoundAnswers, assignGroup, adminApplyScore,
+  getRoundAnswers, assignGroup, adminApplyScore, removePlayer,
   adminGenerateRankings, getRankings,
 } from '@/app/game-actions';
 import { useGameRealtime } from '@/hooks/useGameRealtime';
@@ -208,6 +208,17 @@ export default function AdminRoomPage() {
     } catch {}
   };
 
+  const handleRemovePlayer = async (playerId: string, nickname: string) => {
+    if (!confirm(`确定移除玩家「${nickname}」吗？其答题记录也将被清除。`)) return;
+    try {
+      await removePlayer(playerId);
+      const p = await getPlayers(roomId);
+      setPlayers(p);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '移除失败');
+    }
+  };
+
   // ============================================================
   // 渲染
   // ============================================================
@@ -401,16 +412,17 @@ export default function AdminRoomPage() {
                 </div>
                 <div className="space-y-2">
                   {groupA.map((p) => (
-                    <div key={p.id} className="flex items-center gap-3 py-2 px-3 rounded-lg bg-[rgba(15,23,42,0.4)]">
-                      <span className="flex-1">
+                    <div key={p.id} className="flex items-center gap-2 py-2 px-3 rounded-lg bg-[rgba(15,23,42,0.4)]">
+                      <span className="flex-1 min-w-0">
                         <span className="text-sm font-medium">{p.nickname}</span>
-                        <span className="text-xs text-[var(--text-secondary)] ml-2">({p.real_name})</span>
+                        <span className="text-xs text-[var(--text-secondary)] ml-1">({p.real_name})</span>
                       </span>
-                      <span className="text-sm font-bold text-blue-400">{p.score}</span>
-                      <div className="flex gap-1">
+                      <span className="text-sm font-bold text-blue-400 w-10 text-right">{p.score}</span>
+                      <div className="flex gap-1 flex-shrink-0">
                         <button onClick={() => handleAddScore(p.id, 100)} className="w-7 h-7 rounded-md bg-green-500/20 text-green-400 text-xs font-bold hover:bg-green-500/30" title="+100分">+</button>
                         <button onClick={() => handleAddScore(p.id, -100)} className="w-7 h-7 rounded-md bg-red-500/20 text-red-400 text-xs font-bold hover:bg-red-500/30" title="-100分">-</button>
                         <button onClick={() => handleAssignGroup(p.id, 'B')} className="w-7 h-7 rounded-md bg-yellow-500/20 text-yellow-400 text-xs font-bold hover:bg-yellow-500/30" title="移到B组">B</button>
+                        <button onClick={() => handleRemovePlayer(p.id, p.nickname)} className="w-7 h-7 rounded-md bg-gray-500/20 text-gray-400 text-xs font-bold hover:bg-gray-500/30" title="移除">x</button>
                       </div>
                     </div>
                   ))}
@@ -425,16 +437,17 @@ export default function AdminRoomPage() {
                 </div>
                 <div className="space-y-2">
                   {groupB.map((p) => (
-                    <div key={p.id} className="flex items-center gap-3 py-2 px-3 rounded-lg bg-[rgba(15,23,42,0.4)]">
-                      <span className="flex-1">
+                    <div key={p.id} className="flex items-center gap-2 py-2 px-3 rounded-lg bg-[rgba(15,23,42,0.4)]">
+                      <span className="flex-1 min-w-0">
                         <span className="text-sm font-medium">{p.nickname}</span>
-                        <span className="text-xs text-[var(--text-secondary)] ml-2">({p.real_name})</span>
+                        <span className="text-xs text-[var(--text-secondary)] ml-1">({p.real_name})</span>
                       </span>
-                      <span className="text-sm font-bold text-yellow-400">{p.score}</span>
-                      <div className="flex gap-1">
+                      <span className="text-sm font-bold text-yellow-400 w-10 text-right">{p.score}</span>
+                      <div className="flex gap-1 flex-shrink-0">
                         <button onClick={() => handleAddScore(p.id, 100)} className="w-7 h-7 rounded-md bg-green-500/20 text-green-400 text-xs font-bold hover:bg-green-500/30" title="+100分">+</button>
                         <button onClick={() => handleAddScore(p.id, -100)} className="w-7 h-7 rounded-md bg-red-500/20 text-red-400 text-xs font-bold hover:bg-red-500/30" title="-100分">-</button>
                         <button onClick={() => handleAssignGroup(p.id, 'A')} className="w-7 h-7 rounded-md bg-blue-500/20 text-blue-400 text-xs font-bold hover:bg-blue-500/30" title="移到A组">A</button>
+                        <button onClick={() => handleRemovePlayer(p.id, p.nickname)} className="w-7 h-7 rounded-md bg-gray-500/20 text-gray-400 text-xs font-bold hover:bg-gray-500/30" title="移除">x</button>
                       </div>
                     </div>
                   ))}

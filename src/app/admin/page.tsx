@@ -10,6 +10,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(false);
   const [room, setRoom] = useState<GameRoom | null>(null);
   const [error, setError] = useState('');
+  const [customCode, setCustomCode] = useState('');
 
   useEffect(() => {
     getCurrentUser().then((user) => {
@@ -21,7 +22,7 @@ export default function AdminPage() {
     setLoading(true);
     setError('');
     try {
-      const r = await createRoom('音乐竞猜PK');
+      const r = await createRoom('音乐竞猜PK', customCode.trim() || undefined);
       setRoom(r);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '创建失败');
@@ -117,6 +118,22 @@ export default function AdminPage() {
         <p className="text-sm text-[var(--text-secondary)] mb-6">
           创建游戏房间，控制游戏流程
         </p>
+
+        {/* 自定义房间码 */}
+        <div className="mb-4 text-left">
+          <label className="text-xs text-[var(--text-secondary)] mb-1.5 block">自定义房间码（可选）</label>
+          <input
+            type="text"
+            className="input-field text-center text-xl tracking-[0.3em] font-mono uppercase"
+            placeholder="如 0723PK"
+            value={customCode}
+            onChange={(e) => setCustomCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8))}
+            maxLength={8}
+          />
+          <p className="text-xs text-[var(--text-secondary)] mt-1.5 text-center">
+            4-8位字母数字，留空则自动生成
+          </p>
+        </div>
 
         {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 

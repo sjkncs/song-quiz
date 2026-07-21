@@ -11,16 +11,39 @@ import type {
 // 房间管理
 // ============================================================
 
-export async function createRoom(name?: string) {
+export async function createRoom(name?: string, customCode?: string) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('请先登录');
 
-  // 生成6位房间码
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let roomCode = '';
-  for (let i = 0; i < 6; i++) {
-    roomCode += chars[Math.floor(Math.random() * chars.length)];
+  let roomCode: string;
+
+  if (customCode && customCode.trim().length > 0) {
+    // 使用自定义房间码
+    roomCode = customCode.trim().toUpperCase();
+    if (roomCode.length < 4 || roomCode.length > 8) {
+      throw new Error('房间码需要4-8位字符');
+    }
+    if (!/^[A-Z0-9]+$/.test(roomCode)) {
+      throw new Error('房间码只能包含字母和数字');
+    }
+    // 检查是否已被使用（仅限未结束的房间）
+    const { data: existing } = await supabase
+      .from('game_rooms')
+      .select('id')
+      .eq('room_code', roomCode)
+      .neq('status', 'finished')
+      .maybeSingle();
+    if (existing) {
+      throw new Error('该房间码已被使用，请换一个');
+    }
+  } else {
+    // 生成6位随机房间码
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    roomCode = '';
+    for (let i = 0; i < 6; i++) {
+      roomCode += chars[Math.floor(Math.random() * chars.length)];
+    }
   }
 
   const { data, error } = await supabase
@@ -162,6 +185,18 @@ export async function assignGroup(playerId: string, group: GroupLabel) {
     .update({ group_label: group })
     .eq('id', playerId);
   if (error) throw new Error('分组失败');
+}
+
+export async function removePlayer(playerId: string) {
+  const supabase = await createClient();
+  // 先删除该玩家的所有答题记录
+  await supabase.from('game_answers').delete().eq('player_id', playerId);
+  // 再删除玩家
+  const { error } = await supabase
+    .from('game_players')
+    .delete()
+    .eq('id', playerId);
+  if (error) throw new Error('移除玩家失败');
 }
 
 export async function updatePlayerScore(
