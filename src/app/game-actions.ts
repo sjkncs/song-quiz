@@ -381,19 +381,33 @@ async function aiJudgeAnswer(
   playerAnswer: string,
   questionText: string
 ): Promise<boolean> {
+  // 统一的回退匹配函数（LLM 不可用时使用）
+  const fallbackMatch = (): boolean => {
+    const normalize = (s: string) =>
+      s.toLowerCase().replace(/[\s""''、，。,.!?！？：:;；\-\(\)（）\[\]【】]/g, '');
+    const player = normalize(playerAnswer);
+
+    // 从正确答案中提取关键词：
+    // 1. 提取所有《...》中的内容作为关键词
+    const bracketMatches = [...correctAnswer.matchAll(/《([^》]+)》/g)].map(m => normalize(m[1]));
+    // 2. 按 / 或 | 拆分后的内容也作为关键词
+    const slashKeywords = correctAnswer.split(/[\/|]/).map(k => normalize(k.replace(/[《》]/g, ''))).filter(Boolean);
+    // 3. 合并去重
+    const allKeywords = [...new Set([...bracketMatches, ...slashKeywords])].filter(Boolean);
+
+    // 如果没有提取到关键词，用整个正确答案
+    const effectiveKeywords = allKeywords.length > 0 ? allKeywords : [normalize(correctAnswer)];
+
+    // 玩家答案中包含任一关键词即判对
+    return effectiveKeywords.some(k => k.length >= 2 && player.includes(k));
+  };
+
   const llmKey = process.env.LLM_API_KEY;
   const llmBaseRaw = process.env.LLM_BASE_URL || 'https://api.deepseek.com';
   const llmModel = process.env.LLM_MODEL || 'deepseek-chat';
 
   if (!llmKey) {
-    // 无 LLM key 时回退到简单关键词匹配
-    const normalize = (s: string) =>
-      s.toLowerCase().replace(/[\s《》""''、，。,.!?！？：:;；\-\(\)（）\[\]【】]/g, '');
-    const correct = normalize(correctAnswer);
-    const player = normalize(playerAnswer);
-    // 允许正确答案中的任一关键词出现在玩家答案中
-    const keywords = correct.split(/[\/|]/).filter(Boolean);
-    return keywords.some(k => player.includes(k)) || player === correct;
+    return fallbackMatch();
   }
 
   const llmBase = llmBaseRaw.replace(/\/+v1\/?$/, '');
@@ -436,10 +450,7 @@ async function aiJudgeAnswer(
 
     if (!response.ok) {
       console.warn('AI judge LLM error:', response.status);
-      // 回退到简单匹配
-      const normalize = (s: string) =>
-        s.toLowerCase().replace(/[\s《》""''、，。,.!?！？：:;；\-\(\)（）\[\]【】]/g, '');
-      return normalize(playerAnswer).includes(normalize(correctAnswer));
+      return fallbackMatch();
     }
 
     const data = await response.json();
@@ -447,13 +458,7 @@ async function aiJudgeAnswer(
     return reply.includes('CORRECT');
   } catch {
     clearTimeout(timeout);
-    // 超时或网络错误，回退到简单匹配
-    const normalize = (s: string) =>
-      s.toLowerCase().replace(/[\s《》""''、，。,.!?！？：:;；\-\(\)（）\[\]【】]/g, '');
-    const correct = normalize(correctAnswer);
-    const player = normalize(playerAnswer);
-    const keywords = correct.split(/[\/|]/).filter(Boolean);
-    return keywords.some(k => player.includes(k)) || player === correct;
+    return fallbackMatch();
   }
 }
 
