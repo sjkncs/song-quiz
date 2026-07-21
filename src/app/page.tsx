@@ -39,12 +39,14 @@ export default function HomePage() {
   const handleAdmin = async () => {
     if (!realName.trim()) { setError('请输入真实姓名'); return; }
     if (!nickname.trim()) { setError('请输入昵称'); return; }
+    if (!roomCode.trim() || roomCode.trim().length < 4) { setError('请输入有效的房间码'); return; }
     setLoading(true);
     setError('');
     try {
       await signInAnonymously(nickname.trim());
       storeUserInfo();
       sessionStorage.setItem('is_admin', 'true');
+      sessionStorage.setItem('room_code', roomCode.trim().toUpperCase());
       router.push('/admin');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '登录失败');
@@ -120,23 +122,25 @@ export default function HomePage() {
           />
         </div>
 
-        {/* 房间码（仅玩家） */}
-        {!isAdmin && (
-          <div>
-            <label className="text-xs text-[var(--text-secondary)] mb-1.5 block">房间码</label>
-            <input
-              type="text"
-              className="input-field text-center text-2xl tracking-[0.3em] font-mono uppercase"
-              placeholder="ABC123"
-              value={roomCode}
-              onChange={(e) => setRoomCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8))}
-              maxLength={8}
-            />
-            <p className="text-xs text-[var(--text-secondary)] mt-1.5 text-center">
-              输入主持人提供的房间码
-            </p>
-          </div>
-        )}
+        {/* 房间码 */}
+        <div>
+          <label className="text-xs text-[var(--text-secondary)] mb-1.5 block">
+            {isAdmin ? '设定房间码' : '房间码'}
+          </label>
+          <input
+            type="text"
+            className="input-field text-center text-2xl tracking-[0.3em] font-mono uppercase"
+            placeholder={isAdmin ? '如 0723PK' : 'ABC123'}
+            value={roomCode}
+            onChange={(e) => setRoomCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8))}
+            maxLength={8}
+          />
+          <p className="text-xs text-[var(--text-secondary)] mt-1.5 text-center">
+            {isAdmin
+              ? '4-8位字母数字，设定后告知玩家'
+              : '输入主持人提供的房间码'}
+          </p>
+        </div>
 
         {/* 错误提示 */}
         {error && (
