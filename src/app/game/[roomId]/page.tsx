@@ -181,16 +181,22 @@ export default function GamePage() {
           setPhase('revealed');
           break;
         case 'round_complete':
-          // 刷新排名
+          // 刷新排名（加随机延迟避免雷群效应）
           if (room) {
-            getRankings(room.id).then(setRankings).catch(() => {});
-            getPlayers(room.id).then(setPlayers).catch(() => {});
+            const jitter = Math.random() * 2000;
+            setTimeout(() => {
+              getRankings(room.id).then(setRankings).catch(() => {});
+              getPlayers(room.id).then(setPlayers).catch(() => {});
+            }, jitter);
           }
           break;
         case 'game_finish':
           setPhase('finished');
           if (room) {
-            getRankings(room.id).then(setRankings).catch(() => {});
+            const jitter2 = Math.random() * 3000;
+            setTimeout(() => {
+              getRankings(room.id).then(setRankings).catch(() => {});
+            }, jitter2);
           }
           break;
         case 'game_start':
@@ -220,6 +226,7 @@ export default function GamePage() {
         antiCheat.reset();
       }
     }, [antiCheat]),
+    subscribeToPlayers: false, // 玩家端不订阅玩家变更，避免 O(N²) 订阅风暴
   });
 
   // 提交答案

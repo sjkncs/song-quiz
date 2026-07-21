@@ -423,27 +423,21 @@ export async function submitAnswer(
     });
   }
 
-  // 更新玩家积分和统计
+  // 更新玩家积分和统计（使用原子递增避免竞态）
   const { data: currentPlayer } = await supabase
     .from('game_players')
-    .select('score, correct_count, wrong_count, streak, max_streak')
+    .select('streak')
     .eq('id', playerId)
     .single();
 
-  if (currentPlayer) {
-    const newStreak = isCorrect ? (currentPlayer.streak || 0) + 1 : 0;
-    const newMaxStreak = Math.max(currentPlayer.max_streak || 0, newStreak);
-    await supabase
-      .from('game_players')
-      .update({
-        score: (currentPlayer.score || 0) + pointsEarned,
-        correct_count: (currentPlayer.correct_count || 0) + (isCorrect ? 1 : 0),
-        wrong_count: (currentPlayer.wrong_count || 0) + (isCorrect ? 0 : 1),
-        streak: newStreak,
-        max_streak: newMaxStreak,
-      })
-      .eq('id', playerId);
-  }
+  const newStreak = isCorrect ? ((currentPlayer?.streak || 0) + 1) : 0;
+  await supabase.rpc('update_player_score_atomic', {
+    p_player_id: playerId,
+    p_score_delta: pointsEarned,
+    p_correct_delta: isCorrect ? 1 : 0,
+    p_wrong_delta: isCorrect ? 0 : 1,
+    p_new_streak: newStreak,
+  });
 
   return data as GameAnswer;
 }
@@ -465,17 +459,13 @@ export async function getRoundAnswers(roundId: string) {
 
 export async function adminApplyScore(playerId: string, points: number) {
   const supabase = await createClient();
-  const { data: player } = await supabase
-    .from('game_players')
-    .select('score')
-    .eq('id', playerId)
-    .single();
-  if (!player) throw new Error('玩家不存在');
-
-  await supabase
-    .from('game_players')
-    .update({ score: player.score + points })
-    .eq('id', playerId);
+  await supabase.rpc('update_player_score_atomic', {
+    p_player_id: playerId,
+    p_score_delta: points,
+    p_correct_delta: 0,
+    p_wrong_delta: 0,
+    p_new_streak: -1, // -1 means don't change streak
+  });
 }
 
 export async function adminToggleCorrect(
@@ -594,25 +584,26 @@ export async function adminGenerateRankings(roomId: string) {
   // 总排名 — 先清除旧排名，避免被移除的玩家残留
   const overallSorted = [...rankDataList].sort(sortFn);
   await supabase.from('game_rankings').delete().eq('room_id', roomId);
-  for (let i = 0; i < overallSorted.length; i++) {
-    const r = overallSorted[i];
-    await supabase
-      .from('game_rankings')
-      .upsert({
-        room_id: roomId,
-        player_id: r.player.id,
-        group_label: r.player.group_label,
-        rank_position: i + 1,
-        award_tier: Math.min(i + 1, 4),
-        final_score: r.player.score,
-        correct_count: r.player.correct_count,
-        wrong_count: r.player.wrong_count,
-        total_questions: r.totalQuestions,
-        accuracy_rate: Math.round(r.accuracyRate * 10000) / 100,
-        avg_time_ms: r.avgTime,
-        total_time_ms: r.totalTime,
-        total_screen_switches: r.totalSwitches,
-      }, { onConflict: 'room_id,player_id' });
+
+  // 批量 upsert 代替逐条写入（50个玩家 = 1次查询 vs 50次查询）
+  const rankingRows = overallSorted.map((r, i) => ({
+    room_id: roomId,
+    player_id: r.player.id,
+    group_label: r.player.group_label,
+    rank_position: i + 1,
+    award_tier: Math.min(i + 1, 4),
+    final_score: r.player.score,
+    correct_count: r.player.correct_count,
+    wrong_count: r.player.wrong_count,
+    total_questions: r.totalQuestions,
+    accuracy_rate: Math.round(r.accuracyRate * 10000) / 100,
+    avg_time_ms: r.avgTime,
+    total_time_ms: r.totalTime,
+    total_screen_switches: r.totalSwitches,
+  }));
+
+  if (rankingRows.length > 0) {
+    await supabase.from('game_rankings').upsert(rankingRows, { onConflict: 'room_id,player_id' });
   }
 
   revalidatePath('/admin');

@@ -13,10 +13,11 @@ interface UseGameRealtimeOptions {
   onRoomUpdate?: (room: GameRoom) => void;
   onPlayerUpdate?: (players: GamePlayer[]) => void;
   onRoundUpdate?: (round: GameRound & { question?: GameQuestion }) => void;
+  subscribeToPlayers?: boolean; // 默认 true，player 端设为 false 避免订阅风暴
 }
 
 export function useGameRealtime(options: UseGameRealtimeOptions) {
-  const { roomId, onBroadcast, onRoomUpdate, onPlayerUpdate, onRoundUpdate } = options;
+  const { roomId, onBroadcast, onRoomUpdate, onPlayerUpdate, onRoundUpdate, subscribeToPlayers = true } = options;
   const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null);
   if (!supabaseRef.current) supabaseRef.current = createClient();
   const supabase = supabaseRef.current;
@@ -69,18 +70,6 @@ export function useGameRealtime(options: UseGameRealtimeOptions) {
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'game_players', filter: `room_id=eq.${roomId}` },
-        async () => {
-          const { data } = await supabase
-            .from('game_players')
-            .select('*')
-            .eq('room_id', roomId)
-            .order('joined_at', { ascending: true });
-          if (data) onPlayerUpdateRef.current?.(data as GamePlayer[]);
-        }
-      )
-      .on(
-        'postgres_changes',
         { event: '*', schema: 'public', table: 'game_rounds', filter: `room_id=eq.${roomId}` },
         async (payload) => {
           const roundData = payload.new as GameRound;
@@ -95,8 +84,25 @@ export function useGameRealtime(options: UseGameRealtimeOptions) {
             onRoundUpdateRef.current?.(roundData);
           }
         }
-      )
-      .subscribe();
+      );
+
+    // 仅管理端订阅玩家变更，避免 N 个玩家客户端产生 O(N²) 订阅风暴
+    if (subscribeToPlayers) {
+      dbChannel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'game_players', filter: `room_id=eq.${roomId}` },
+        async () => {
+          const { data } = await supabase
+            .from('game_players')
+            .select('*')
+            .eq('room_id', roomId)
+            .order('joined_at', { ascending: true });
+          if (data) onPlayerUpdateRef.current?.(data as GamePlayer[]);
+        }
+      );
+    }
+
+    dbChannel.subscribe();
 
     return () => {
       supabase.removeChannel(dbChannel);
