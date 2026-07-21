@@ -621,7 +621,7 @@ export default function AdminRoomPage() {
                             <span className="text-xs text-[var(--text-secondary)] ml-1">({p.real_name})</span>
                             {p.wrong_count >= 2 && (
                               <span className="ml-2 px-1.5 py-0.5 rounded text-xs bg-purple-500/20 text-purple-300 font-medium">
-                                {p.wrong_count === 2 ? '🎤表演节目' : p.wrong_count === 3 ? '🍺罚一杯' : `😈翻车${p.wrong_count}次`}
+                                {p.wrong_count === 2 ? '🎤表演节目' : p.wrong_count === 3 ? '🍺罚一杯' : `😈"奖励"x${p.wrong_count}`}
                               </span>
                             )}
                           </span>

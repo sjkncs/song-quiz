@@ -653,7 +653,7 @@ export default function GamePage() {
                 ? '🎤 答错2次！准备表演一个节目吧~'
                 : player.wrong_count === 3
                 ? '🍺 答错3次！自罚一杯没商量！'
-                : `😈 已翻车${player.wrong_count}次，惩罚加倍哦~`}
+                : `😈 已翻车${player.wrong_count}次，"奖励"加倍哦~`}
             </p>
           </div>
         )}
@@ -751,7 +751,7 @@ export default function GamePage() {
                 ? '🎤 答错2次！准备表演一个节目吧~'
                 : player.wrong_count === 3
                 ? '🍺 答错3次！自罚一杯没商量！'
-                : `😈 已翻车${player.wrong_count}次，惩罚加倍哦~`}
+                : `😈 已翻车${player.wrong_count}次，"奖励"加倍哦~`}
             </p>
           </div>
         )}
