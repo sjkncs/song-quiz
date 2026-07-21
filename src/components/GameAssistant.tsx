@@ -21,7 +21,7 @@ export default function GameAssistant({ roomId, playerId, mode = 'player' }: Gam
       role: 'assistant',
       content: mode === 'admin'
         ? '管理助手就绪。可以问我游戏进度、玩家状态、数据分析等问题。'
-        : '你好！我是歌小智，你的游戏助手。有任何问题都可以问我。',
+        : '你好！我是派对助手，你的游戏助手。有任何问题都可以问我。',
       timestamp: Date.now(),
     },
   ]);
@@ -139,7 +139,7 @@ export default function GameAssistant({ roomId, playerId, mode = 'player' }: Gam
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold">
-                {mode === 'admin' ? '管理助手' : '歌小智'}
+                {mode === 'admin' ? '管理助手' : '派对助手'}
               </p>
               <p className="text-xs text-[#94a3b8]">AI游戏助手</p>
             </div>
@@ -205,7 +205,7 @@ export default function GameAssistant({ roomId, playerId, mode = 'player' }: Gam
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={mode === 'admin' ? '问管理助手...' : '问歌小智...'}
+                placeholder={mode === 'admin' ? '问管理助手...' : '问派对助手...'}
                 className="flex-1 bg-[rgba(30,41,59,0.6)] border border-[rgba(148,163,184,0.15)] rounded-xl px-3 py-2 text-sm text-[#e2e8f0] outline-none focus:border-blue-500 placeholder:text-[#64748b]"
               />
               <button

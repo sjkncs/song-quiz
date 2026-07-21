@@ -31,9 +31,9 @@ function generateShareCard(state: QuizState, rank: string, accuracy: number, dur
 
   // Title
   ctx.fillStyle = '#BB86FC'; ctx.font = 'bold 28px sans-serif'
-  ctx.fillText('猜歌王', 30, 50)
+  ctx.fillText('脑力派对', 30, 50)
   ctx.fillStyle = '#888'; ctx.font = '14px sans-serif'
-  ctx.fillText('听歌识曲，猜对有奖', 30, 75)
+  ctx.fillText('音乐影视知识对战', 30, 75)
 
   // Score
   ctx.fillStyle = '#fff'; ctx.font = 'bold 56px sans-serif'
@@ -62,7 +62,7 @@ function generateShareCard(state: QuizState, rank: string, accuracy: number, dur
 
   // Footer
   ctx.fillStyle = '#555'; ctx.font = '12px sans-serif'
-  ctx.fillText('猜歌王 © 2026 · AI Coding 夏令营', 30, 375)
+  ctx.fillText('脑力派对 © 2026 · AI Coding 夏令营', 30, 375)
   ctx.fillText('来挑战我的成绩！', 430, 375)
 
   return canvas.toDataURL('image/png')
@@ -88,7 +88,7 @@ export function ResultsScreen({ state, mode, theme, duration, onRestart }: Props
     if (!shareUrl) return
     const a = document.createElement('a')
     a.href = shareUrl
-    a.download = `猜歌王-成绩-${state.totalScore}分.png`
+    a.download = `脑力派对-成绩-${state.totalScore}分.png`
     a.click()
   }, [shareUrl, state.totalScore])
 

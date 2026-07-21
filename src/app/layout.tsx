@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "猜歌王 PK - 音乐知识竞赛",
-  description: "双人组队PK猜歌名，影视片段、流行曲、知识问答，实时对战排名",
+  title: "脑力派对 - 音乐影视知识对战",
+  description: "多人组队PK，猜歌名、猜影视、知识问答，实时对战排名",
   icons: { icon: "/favicon.ico" },
 };
 

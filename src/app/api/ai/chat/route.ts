@@ -11,8 +11,8 @@ export async function POST(request: Request) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
 
-    // System prompt for 歌小智
-    const systemPrompt = `你是「歌小智」，猜歌王的AI音乐助手。你热爱粤语流行音乐，精通粤语歌的历史、歌手、歌词文化。
+    // System prompt for 派对助手
+    const systemPrompt = `你是「派对助手」，脑力派对的AI游戏助手。你热爱音乐和影视文化，精通各类知识。
 
 你的职责：
 1. 帮助用户了解粤语歌知识（歌手、歌曲背景、歌词含义）
@@ -144,5 +144,5 @@ function getFallbackReply(input: string): string {
   if (lower.includes('技巧') || lower.includes('怎么猜')) {
     return '猜歌技巧分享：\n\n1️⃣ **听前奏** — 经典歌曲前奏辨识度极高\n2️⃣ **辨声线** — 陈奕迅浑厚、王菲空灵、黄家驹沙哑\n3️⃣ **记歌词** — 熟悉歌词是快速猜歌的关键\n4️⃣ **听编曲** — 摇滚有电吉他，流行偏柔和\n5️⃣ **年代感** — 80年代合成器多，90年代摇滚风\n\n多玩几局自然就有感觉了！'
   }
-  return '你好！我是歌小智，猜歌王的AI音乐助手 🎵\n\n我可以帮你：\n• 推荐粤语歌曲\n• 解释歌词含义\n• 分享歌手故事\n• 提供猜歌技巧\n\n有什么想聊的尽管问我！'
+  return '你好！我是派对助手，脑力派对的AI游戏助手 🎵\n\n我可以帮你：\n• 推荐歌曲和影视\n• 分享文化知识\n• 提供答题技巧\n\n有什么想聊的尽管问我！'
 }

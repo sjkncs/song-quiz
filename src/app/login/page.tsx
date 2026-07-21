@@ -50,9 +50,9 @@ function LoginContent() {
         {/* Logo */}
         <div className="text-center mb-10">
           <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-purple-400 via-pink-300 to-teal-400 bg-clip-text text-transparent">
-            猜歌王
+            脑力派对
           </h1>
-          <p className="text-gray-400">登录后开始猜歌之旅</p>
+          <p className="text-gray-400">登录后开始知识对战之旅</p>
         </div>
 
         {/* OAuth Buttons */}

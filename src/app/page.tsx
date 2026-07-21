@@ -65,10 +65,10 @@ export default function HomePage() {
           </svg>
         </div>
         <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-          猜歌王 PK
+          脑力派对
         </h1>
         <p className="text-[var(--text-secondary)] mt-2 text-sm">
-          音乐知识竞赛 - 双人组队PK
+          音乐影视知识对战 - 多人组队PK
         </p>
       </div>
 

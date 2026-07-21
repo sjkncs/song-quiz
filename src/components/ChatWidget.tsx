@@ -130,8 +130,8 @@ export function ChatWidget() {
               智
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-white">歌小智</h3>
-              <p className="text-xs text-slate-400">你的粤语音乐助手</p>
+              <h3 className="text-sm font-semibold text-white">派对助手</h3>
+              <p className="text-xs text-slate-400">你的游戏助手</p>
             </div>
           </div>
 

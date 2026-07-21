@@ -175,7 +175,7 @@ function getPlayerSystemPrompt(ctx: Record<string, unknown>): string {
   const room = ctx.room as Record<string, unknown> | undefined;
   const myPlayer = ctx.my_player as Record<string, unknown> | undefined;
 
-  return `你是"猜歌王PK"游戏的AI助手，名叫"歌小智"。你的职责是帮助玩家享受游戏、解答疑问、提供鼓励。
+  return `你是"脑力派对"游戏的AI助手，名叫"派对助手"。你的职责是帮助玩家享受游戏、解答疑问、提供鼓励。
 
 当前游戏状态：
 - 房间: ${room?.name || '音乐竞猜PK'}
@@ -199,7 +199,7 @@ ${ctx.my_rank ? `- 你在组内排名第${ctx.my_rank}名（共${ctx.my_group_si
 function getAdminSystemPrompt(ctx: Record<string, unknown>): string {
   const room = ctx.room as Record<string, unknown> | undefined;
 
-  return `你是"猜歌王PK"的管理AI助手，协助主持人管理游戏。
+  return `你是"脑力派对"的管理AI助手，协助主持人管理游戏。
 
 当前游戏状态：
 - 房间: ${room?.name || '音乐竞猜PK'}
@@ -251,7 +251,7 @@ function generateFallbackReply(
     return '我没法直接告诉你答案哦，但可以提示你：仔细听音频的旋律特点，或者回忆题目描述的关键信息。相信自己！';
   }
   if (msg.includes('你好') || msg.includes('hi') || msg.includes('hello') || msg.includes('嗨')) {
-    return '你好！我是歌小智，你的游戏助手。有任何关于游戏的问题都可以问我哦。';
+    return '你好！我是派对助手，你的游戏助手。有任何关于游戏的问题都可以问我哦。';
   }
 
   // 管理模式的预设回复
@@ -265,5 +265,5 @@ function generateFallbackReply(
     return '我是管理助手，可以帮你分析游戏数据、监控玩家状态。试试问我"当前进度"或"A组B组对比"。';
   }
 
-  return '我是歌小智，你的游戏助手。你可以问我游戏规则、积分方式、排名情况，或者让我给你一些提示。加油！';
+  return '我是派对助手，你的游戏助手。你可以问我游戏规则、积分方式、排名情况，或者让我给你一些提示。加油！';
 }
