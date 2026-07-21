@@ -95,6 +95,7 @@ export interface GameRound {
   reveal_at: string | null;
   points_multiplier: number;
   media_unlocked: boolean;
+  buzzed_in_player_id: string | null;
   // join
   question?: GameQuestion;
 }
@@ -169,6 +170,8 @@ export type GameBroadcastType =
   | 'timer_sync'
   | 'score_update'
   | 'media_unlock'
+  | 'buzz_in'
+  | 'buzz_in_reset'
   | 'admin_override';
 
 export interface GameBroadcast {

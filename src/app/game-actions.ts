@@ -327,6 +327,136 @@ export async function toggleMediaUnlock(roundId: string, unlocked: boolean) {
   if (error) throw new Error('切换媒体权限失败');
 }
 
+// ============================================================
+// 抢答（Buzz-In）
+// ============================================================
+
+export async function buzzIn(roundId: string, playerId: string) {
+  const supabase = await createClient();
+
+  // 检查是否已有人抢答
+  const { data: round } = await supabase
+    .from('game_rounds')
+    .select('buzzed_in_player_id')
+    .eq('id', roundId)
+    .single();
+
+  if (round?.buzzed_in_player_id) {
+    throw new Error('已经有人抢答了');
+  }
+
+  const { error } = await supabase
+    .from('game_rounds')
+    .update({ buzzed_in_player_id: playerId })
+    .eq('id', roundId)
+    .is('buzzed_in_player_id', null); // 原子锁定，防止并发
+
+  if (error) throw new Error('抢答失败');
+}
+
+export async function adminResetBuzzIn(roundId: string) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('game_rounds')
+    .update({ buzzed_in_player_id: null })
+    .eq('id', roundId);
+  if (error) throw new Error('重置抢答失败');
+}
+
+export async function adminAssignBuzzIn(roundId: string, playerId: string) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('game_rounds')
+    .update({ buzzed_in_player_id: playerId })
+    .eq('id', roundId);
+  if (error) throw new Error('指定答题人失败');
+}
+
+// ============================================================
+// AI 辅助判题（主观题）
+// ============================================================
+
+async function aiJudgeAnswer(
+  correctAnswer: string,
+  playerAnswer: string,
+  questionText: string
+): Promise<boolean> {
+  const llmKey = process.env.LLM_API_KEY;
+  const llmBaseRaw = process.env.LLM_BASE_URL || 'https://api.deepseek.com';
+  const llmModel = process.env.LLM_MODEL || 'deepseek-chat';
+
+  if (!llmKey) {
+    // 无 LLM key 时回退到简单关键词匹配
+    const normalize = (s: string) =>
+      s.toLowerCase().replace(/[\s《》""''、，。,.!?！？：:;；\-\(\)（）\[\]【】]/g, '');
+    const correct = normalize(correctAnswer);
+    const player = normalize(playerAnswer);
+    // 允许正确答案中的任一关键词出现在玩家答案中
+    const keywords = correct.split(/[\/|]/).filter(Boolean);
+    return keywords.some(k => player.includes(k)) || player === correct;
+  }
+
+  const llmBase = llmBaseRaw.replace(/\/+v1\/?$/, '');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const response = await fetch(`${llmBase}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${llmKey}`,
+      },
+      body: JSON.stringify({
+        model: llmModel,
+        messages: [
+          {
+            role: 'system',
+            content: `你是一个游戏答题裁判。你的任务是判断玩家的答案是否正确。
+规则：
+1. 只要玩家答案语义上等价于正确答案即可判对，不需要完全一致
+2. 大小写、标点符号、书名号的差异不影响判定
+3. 如果正确答案有多个（用/或|分隔），答出其中任一个即正确
+4. 如果题目要求多个答案（如"说出三部作品"），玩家至少答对要求的数量才算对
+5. 允许合理的别名、简称（如"周星驰"="星爷"，"Taylor Swift"="霉霉"）
+6. 只回答 "CORRECT" 或 "WRONG"，不要解释`
+          },
+          {
+            role: 'user',
+            content: `题目：${questionText}\n正确答案：${correctAnswer}\n玩家答案：${playerAnswer}`
+          }
+        ],
+        temperature: 0.1,
+        max_tokens: 10,
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      console.warn('AI judge LLM error:', response.status);
+      // 回退到简单匹配
+      const normalize = (s: string) =>
+        s.toLowerCase().replace(/[\s《》""''、，。,.!?！？：:;；\-\(\)（）\[\]【】]/g, '');
+      return normalize(playerAnswer).includes(normalize(correctAnswer));
+    }
+
+    const data = await response.json();
+    const reply = (data.choices?.[0]?.message?.content || '').trim().toUpperCase();
+    return reply.includes('CORRECT');
+  } catch {
+    clearTimeout(timeout);
+    // 超时或网络错误，回退到简单匹配
+    const normalize = (s: string) =>
+      s.toLowerCase().replace(/[\s《》""''、，。,.!?！？：:;；\-\(\)（）\[\]【】]/g, '');
+    const correct = normalize(correctAnswer);
+    const player = normalize(playerAnswer);
+    const keywords = correct.split(/[\/|]/).filter(Boolean);
+    return keywords.some(k => player.includes(k)) || player === correct;
+  }
+}
+
 export async function completeRound(roundId: string) {
   const supabase = await createClient();
   const { error } = await supabase
@@ -378,10 +508,10 @@ export async function goBackRound(roomId: string) {
 
   if (!prevRound) throw new Error('找不到上一题');
 
-  // 重置上一题状态为 active
+  // 重置上一题状态为 active，同时清除抢答状态
   await supabase
     .from('game_rounds')
-    .update({ status: 'active' })
+    .update({ status: 'active', buzzed_in_player_id: null })
     .eq('id', prevRound.id);
 
   // 删除上一题的所有答题记录（让玩家重新作答）
@@ -435,7 +565,7 @@ export async function submitAnswer(
 ) {
   const supabase = await createClient();
 
-  // 获取题目信息判断正确性
+  // 获取题目信息 + 抢答状态
   const { data: round } = await supabase
     .from('game_rounds')
     .select('*, question:game_questions(*)')
@@ -444,10 +574,26 @@ export async function submitAnswer(
 
   if (!round) throw new Error('回合不存在');
 
-  const question = (round as GameRound & { question: GameQuestion }).question;
-  const isCorrect = question.correct_index !== null
-    ? selectedOption === question.correct_index
-    : selectedText === question.correct_answer;
+  // 抢答锁定检查：如果有人抢答，只允许该玩家答题
+  const roundFull = round as GameRound & { question: GameQuestion; buzzed_in_player_id?: string | null };
+  if (roundFull.buzzed_in_player_id && roundFull.buzzed_in_player_id !== playerId) {
+    throw new Error('本轮已被其他玩家抢答，请等待下一题');
+  }
+
+  const question = roundFull.question;
+  let isCorrect: boolean;
+
+  if (question.correct_index !== null) {
+    // 选择题：精确匹配选项索引
+    isCorrect = selectedOption === question.correct_index;
+  } else {
+    // 主观题：AI 辅助语义判题
+    isCorrect = await aiJudgeAnswer(
+      question.correct_answer,
+      selectedText,
+      question.question_text
+    );
+  }
 
   // 检查是否黄牌（切屏超过2次）
   const hasYellowCard = screenSwitches >= 2;

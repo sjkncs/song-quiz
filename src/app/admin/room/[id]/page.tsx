@@ -6,6 +6,7 @@ import {
   getRoom, getPlayers, getActiveQuestions, getCurrentRound,
   updateRoomStatus, updateCurrentRound, createRound,
   startRound, revealRound, completeRound, goBackRound, toggleMediaUnlock,
+  adminResetBuzzIn, adminAssignBuzzIn,
   getRoundAnswers, assignGroup, adminApplyScore, removePlayer,
   adminGenerateRankings, getRankings,
 } from '@/app/game-actions';
@@ -79,7 +80,7 @@ export default function AdminRoomPage() {
       } catch {}
     }, []),
     onBroadcast: useCallback(async (msg: GameBroadcast) => {
-      if (msg.type === 'player_answer' || msg.type === 'round_complete') {
+      if (msg.type === 'player_answer' || msg.type === 'round_complete' || msg.type === 'buzz_in') {
         if (currentRound) {
           const ans = await getRoundAnswers(currentRound.id);
           setAnswers(ans);
@@ -136,6 +137,35 @@ export default function AdminRoomPage() {
       });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '操作失败');
+    }
+  };
+
+  const handleResetBuzzIn = async () => {
+    if (!currentRound) return;
+    try {
+      await adminResetBuzzIn(currentRound.id);
+      setCurrentRound({ ...currentRound, buzzed_in_player_id: null });
+      await broadcast({
+        type: 'buzz_in_reset',
+        payload: { round_id: currentRound.id },
+      });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '重置抢答失败');
+    }
+  };
+
+  const handleAssignBuzzIn = async (playerId: string) => {
+    if (!currentRound) return;
+    try {
+      await adminAssignBuzzIn(currentRound.id, playerId);
+      setCurrentRound({ ...currentRound, buzzed_in_player_id: playerId });
+      const assignedPlayer = players.find(p => p.id === playerId);
+      await broadcast({
+        type: 'buzz_in',
+        payload: { player_id: playerId, player_name: assignedPlayer?.nickname || '未知' },
+      });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '指定答题人失败');
     }
   };
 
@@ -457,6 +487,36 @@ export default function AdminRoomPage() {
                   </>
                 )}
                 <p className="text-sm leading-relaxed mb-3">{currentRound.question.question_text}</p>
+                {/* 抢答状态 */}
+                {currentRound.buzzed_in_player_id && (
+                  <div className="flex items-center gap-3 mb-3 p-3 rounded-lg bg-orange-500/10 border border-orange-500/30">
+                    <span className="text-orange-400 font-bold text-sm">
+                      已抢答: {players.find(p => p.id === currentRound.buzzed_in_player_id)?.nickname || '未知玩家'}
+                    </span>
+                    <button
+                      onClick={handleResetBuzzIn}
+                      className="px-3 py-1 rounded text-xs bg-orange-500/20 text-orange-400 hover:bg-orange-500/30 transition-colors"
+                    >
+                      重置抢答
+                    </button>
+                  </div>
+                )}
+                {!currentRound.buzzed_in_player_id && currentRound.status === 'active' && (
+                  <div className="mb-3 p-3 rounded-lg bg-[rgba(148,163,184,0.05)] border border-[var(--glass-border)]">
+                    <p className="text-xs text-[var(--text-secondary)] mb-2">指定答题人（替代抢答）：</p>
+                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                      {players.map(p => (
+                        <button
+                          key={p.id}
+                          onClick={() => handleAssignBuzzIn(p.id)}
+                          className="px-2 py-1 rounded text-xs bg-[rgba(148,163,184,0.1)] text-[var(--text-secondary)] hover:bg-blue-500/20 hover:text-blue-400 transition-colors"
+                        >
+                          {p.nickname}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="text-sm text-[var(--text-secondary)]">
                   正确答案: <span className="text-green-400 font-medium">{currentRound.question.correct_answer}</span>
                 </div>

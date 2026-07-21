@@ -5,7 +5,8 @@ import { useParams, useRouter } from 'next/navigation';
 import {
   getRoomByCode, getMyPlayer, getPlayers, joinRoom,
   submitAnswer, getRankings, getCurrentRound,
-  signInAnonymously, getCurrentUser
+  signInAnonymously, getCurrentUser, buzzIn,
+  adminGenerateRankings,
 } from '@/app/game-actions';
 import { useGameRealtime, useAntiCheat, useCountdown, useAnswerTimer } from '@/hooks/useGameRealtime';
 import type {
@@ -97,6 +98,7 @@ export default function GamePage() {
   const [warningMsg, setWarningMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [buzzedIn, setBuzzedIn] = useState<string | null>(null); // player_id who buzzed in
 
   // 反作弊
   const antiCheat = useAntiCheat();
@@ -169,6 +171,7 @@ export default function GamePage() {
           setSelectedOption(null);
           setFreeText('');
           setMyAnswer(null);
+          setBuzzedIn(null);
           setStreakMsg('');
           setWarningMsg('');
           antiCheat.reset();
@@ -207,6 +210,12 @@ export default function GamePage() {
         case 'game_start':
           setPhase('waiting');
           break;
+        case 'buzz_in':
+          setBuzzedIn(msg.payload.player_id as string);
+          break;
+        case 'buzz_in_reset':
+          setBuzzedIn(null);
+          break;
       }
     }, [room, antiCheat, answerTimer]),
     onRoomUpdate: useCallback((r: GameRoom) => {
@@ -219,15 +228,16 @@ export default function GamePage() {
     }, []),
     onRoundUpdate: useCallback((round: GameRound & { question?: GameQuestion }) => {
       setCurrentRound(round);
+      setBuzzedIn(round.buzzed_in_player_id || null);
       if (round.status === 'revealed') setPhase('revealed');
       if (round.status === 'completed') {
-        // 准备下一题
         setHasSubmitted(false);
         setSelectedOption(null);
         setFreeText('');
         setMyAnswer(null);
         setStreakMsg('');
         setWarningMsg('');
+        setBuzzedIn(null);
         antiCheat.reset();
       }
     }, [antiCheat]),
@@ -299,6 +309,20 @@ export default function GamePage() {
     } catch (e: unknown) {
       setHasSubmitted(false);
       setError(e instanceof Error ? e.message : '提交失败');
+    }
+  };
+
+  const handleBuzzIn = async () => {
+    if (!currentRound || !player || buzzedIn) return;
+    try {
+      await buzzIn(currentRound.id, player.id);
+      setBuzzedIn(player.id);
+      await broadcast({
+        type: 'buzz_in',
+        payload: { player_id: player.id, player_name: player.nickname },
+      });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '抢答失败');
     }
   };
 
@@ -554,52 +578,66 @@ export default function GamePage() {
           <p className="text-base leading-relaxed whitespace-pre-line">{q.question_text}</p>
         </div>
 
-        {/* 选项/自由作答 */}
-        {!hasSubmitted ? (
-          <div className="space-y-3 mb-6">
-            {hasOptions ? (
-              q.options!.map((opt) => (
-                <button
-                  key={opt.index}
-                  onClick={() => setSelectedOption(opt.index)}
-                  className={`option-btn ${selectedOption === opt.index ? 'selected' : ''}`}
-                >
-                  {opt.text}
-                </button>
-              ))
-            ) : (
-              <textarea
-                className="free-answer"
-                placeholder="输入你的答案..."
-                value={freeText}
-                onChange={(e) => setFreeText(e.target.value)}
-                rows={3}
-              />
-            )}
-
+        {/* 抢答/答题区域 */}
+        {!buzzedIn ? (
+          <div className="text-center mb-6">
             <button
-              onClick={handleSubmitAnswer}
-              disabled={hasOptions ? selectedOption === null : !freeText.trim()}
-              className="btn-primary mt-2"
+              onClick={handleBuzzIn}
+              className="buzz-in-btn"
+              disabled={hasSubmitted}
             >
-              提交答案
+              抢答！
             </button>
+            <p className="text-xs text-[var(--text-secondary)] mt-2">
+              第一个抢到的玩家获得答题权
+            </p>
+          </div>
+        ) : buzzedIn === player?.id ? (
+          <div className="space-y-3 mb-6">
+            <div className="text-center text-sm text-green-400 font-medium mb-2 animate-fadeIn">
+              你抢到了！请作答
+            </div>
+            {!hasSubmitted ? (
+              <>
+                {hasOptions ? (
+                  q.options!.map((opt) => (
+                    <button
+                      key={opt.index}
+                      onClick={() => setSelectedOption(opt.index)}
+                      className={`option-btn ${selectedOption === opt.index ? 'selected' : ''}`}
+                    >
+                      {opt.text}
+                    </button>
+                  ))
+                ) : (
+                  <textarea
+                    className="free-answer"
+                    placeholder="输入你的答案..."
+                    value={freeText}
+                    onChange={(e) => setFreeText(e.target.value)}
+                    rows={3}
+                  />
+                )}
+                <button
+                  onClick={handleSubmitAnswer}
+                  disabled={hasOptions ? selectedOption === null : !freeText.trim()}
+                  className="btn-primary mt-2"
+                >
+                  提交答案
+                </button>
+              </>
+            ) : (
+              <div className="text-center text-sm text-[var(--text-secondary)] py-4">
+                已提交，等待主持人揭晓答案...
+              </div>
+            )}
           </div>
         ) : (
-          <div className="space-y-3 mb-6">
-            {hasOptions && q.options!.map((opt) => (
-              <div
-                key={opt.index}
-                className={`option-btn dimmed ${
-                  selectedOption === opt.index ? 'selected' : ''
-                }`}
-              >
-                {opt.text}
-              </div>
-            ))}
-            <div className="text-center text-sm text-[var(--text-secondary)] py-4">
-              已提交，等待主持人揭晓答案...
-            </div>
+          <div className="text-center mb-6 glass-card p-6">
+            <div className="text-2xl mb-2">&#9203;</div>
+            <p className="text-sm text-[var(--text-secondary)]">
+              已被其他玩家抢答，等待其作答...
+            </p>
           </div>
         )}
 
