@@ -84,6 +84,27 @@ export async function getRoomByCode(code: string) {
   return data as GameRoom;
 }
 
+export async function getAllRooms() {
+  const supabase = await createAdminClient();
+  const { data } = await supabase
+    .from('game_rooms')
+    .select('*, player_count:game_players(count)')
+    .order('created_at', { ascending: false })
+    .limit(50);
+  return (data || []) as (GameRoom & { player_count: { count: number }[] })[];
+}
+
+export async function deleteRoom(roomId: string) {
+  const supabase = await createAdminClient();
+  await supabase.from('game_rankings').delete().eq('room_id', roomId);
+  await supabase.from('game_answers').delete().eq('room_id', roomId);
+  await supabase.from('game_rounds').delete().eq('room_id', roomId);
+  await supabase.from('game_players').delete().eq('room_id', roomId);
+  await supabase.from('anti_cheat_logs').delete().eq('room_id', roomId);
+  await supabase.from('game_rooms').delete().eq('id', roomId);
+  revalidatePath('/admin');
+}
+
 export async function updateRoomStatus(roomId: string, status: GameRoom['status']) {
   const supabase = await createAdminClient();
   const { data, error } = await supabase
@@ -293,7 +314,7 @@ export async function createRound(
       room_id: roomId,
       round_number: roundNumber,
       question_id: questionId,
-      time_limit_sec: timeLimitSec || 30,
+      time_limit_sec: timeLimitSec || 60,
       status: 'pending',
     })
     .select()

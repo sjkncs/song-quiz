@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { createRoom, getCurrentUser, getRoomByCode } from '@/app/game-actions';
+import { createRoom, getCurrentUser, getRoomByCode, getAllRooms, deleteRoom } from '@/app/game-actions';
 import type { GameRoom } from '@/types/game';
 
 export default function AdminPage() {
@@ -12,6 +12,25 @@ export default function AdminPage() {
   const [room, setRoom] = useState<GameRoom | null>(null);
   const [customCode, setCustomCode] = useState('');
   const [error, setError] = useState('');
+  const [allRooms, setAllRooms] = useState<(GameRoom & { player_count: { count: number }[] })[]>([]);
+  const [showRoomList, setShowRoomList] = useState(false);
+
+  const loadRooms = async () => {
+    try {
+      const rooms = await getAllRooms();
+      setAllRooms(rooms);
+    } catch {}
+  };
+
+  const handleDeleteRoom = async (roomId: string, code: string) => {
+    if (!confirm(`确定删除房间「${code}」？所有数据将被清除。`)) return;
+    try {
+      await deleteRoom(roomId);
+      setAllRooms(prev => prev.filter(r => r.id !== roomId));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '删除失败');
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -133,6 +152,53 @@ export default function AdminPage() {
         >
           进入游戏控制台
         </button>
+
+        {/* 房间管理 */}
+        <div className="mt-8">
+          <button
+            onClick={() => { setShowRoomList(!showRoomList); if (!showRoomList) loadRooms(); }}
+            className="text-sm text-[var(--text-secondary)] hover:text-white transition-colors"
+          >
+            {showRoomList ? '隐藏' : '管理'}所有房间 ({allRooms.length > 0 ? allRooms.length : '...'})
+          </button>
+
+          {showRoomList && (
+            <div className="mt-4 space-y-2 max-h-64 overflow-y-auto">
+              {allRooms.map((r) => (
+                <div key={r.id} className={`flex items-center gap-3 py-2 px-3 rounded-lg ${r.id === room.id ? 'bg-blue-500/10 border border-blue-500/20' : 'bg-[rgba(15,23,42,0.4)]'}`}>
+                  <span className="flex-1 min-w-0">
+                    <span className="font-mono text-sm font-bold">{r.room_code}</span>
+                    <span className="text-xs text-[var(--text-secondary)] ml-2">
+                      {r.status === 'waiting' ? '等待中' : r.status === 'playing' ? '进行中' : r.status === 'finished' ? '已结束' : '准备中'}
+                    </span>
+                    <span className="text-xs text-[var(--text-secondary)] ml-2">
+                      {r.player_count?.[0]?.count || 0}人
+                    </span>
+                  </span>
+                  {r.status === 'finished' && (
+                    <button
+                      onClick={() => handleDeleteRoom(r.id, r.room_code)}
+                      className="text-xs px-2 py-1 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                    >
+                      删除
+                    </button>
+                  )}
+                  {r.status !== 'finished' && r.id !== room.id && (
+                    <button
+                      onClick={() => router.push(`/admin/room/${r.id}`)}
+                      className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
+                    >
+                      进入
+                    </button>
+                  )}
+                  {r.id === room.id && (
+                    <span className="text-xs text-blue-400">当前</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </main>
     );
   }

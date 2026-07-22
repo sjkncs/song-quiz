@@ -122,7 +122,7 @@ export default function AdminRoomPage() {
       await broadcast({ type: 'game_start', payload: {} });
 
       const q = questions[0];
-      const round = await createRound(roomId, 1, q.id, room?.config?.time_per_question_sec || 30);
+      const round = await createRound(roomId, 1, q.id, room?.config?.time_per_question_sec || 60);
       await updateCurrentRound(roomId, 1);
       await startRound(round.id);
       const roundWithQuestion = { ...round, question: q };
@@ -240,7 +240,7 @@ export default function AdminRoomPage() {
         await resetRound(existingRound.id);
         round = existingRound;
       } else {
-        round = await createRound(roomId, nextNum, q.id, room.config.time_per_question_sec || 30);
+        round = await createRound(roomId, nextNum, q.id, room.config.time_per_question_sec || 60);
         await startRound(round.id);
       }
 

@@ -104,9 +104,9 @@ export default function GamePage() {
   // 反作弊
   const antiCheat = useAntiCheat();
   const answerTimer = useAnswerTimer();
-  const timerActive = phase === 'playing' && !hasSubmitted;
+  const timerActive = phase === 'playing' && !hasSubmitted && !buzzedIn;
   const timeRemaining = useCountdown(
-    currentRound?.time_limit_sec || 30,
+    currentRound?.time_limit_sec || 60,
     timerActive
   );
 
@@ -445,7 +445,7 @@ export default function GamePage() {
     const q = currentRound.question;
     const hasOptions = q.options && q.options.length > 0;
     const isBonus = q.is_bonus || q.difficulty === 'bonus';
-    const timerPct = timeRemaining / (currentRound.time_limit_sec || 30);
+    const timerPct = timeRemaining / (currentRound.time_limit_sec || 60);
     const circumference = 2 * Math.PI * 35;
     const offset = circumference * (1 - timerPct);
 
