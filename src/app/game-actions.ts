@@ -633,9 +633,9 @@ export async function submitAnswer(
   const question = roundFull.question;
   let isCorrect: boolean;
 
-  if (question.correct_index !== null) {
-    // 选择题：精确匹配选项索引
-    isCorrect = selectedOption === question.correct_index;
+  if (question.correct_index !== null && question.correct_index !== undefined) {
+    // 选择题：精确匹配选项索引（DB 可能返回字符串，需要 Number 转换）
+    isCorrect = selectedOption === Number(question.correct_index);
   } else {
     // 主观题：AI 辅助语义判题
     isCorrect = await aiJudgeAnswer(

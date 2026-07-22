@@ -100,6 +100,7 @@ export default function GamePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [buzzedIn, setBuzzedIn] = useState<string | null>(null); // player_id who buzzed in
+  const currentRoundNumRef = useRef(0); // track latest round number to filter stale DB updates
 
   // 反作弊
   const antiCheat = useAntiCheat();
@@ -151,7 +152,10 @@ export default function GamePage() {
         } else if (r.status === 'playing' || r.status === 'starting') {
           setPhase(r.status === 'starting' ? 'waiting' : 'playing');
           const round = await getCurrentRound(r.id);
-          if (round) setCurrentRound(round);
+          if (round) {
+            setCurrentRound(round);
+            currentRoundNumRef.current = round.round_number;
+          }
         } else {
           setPhase('waiting');
         }
@@ -178,7 +182,9 @@ export default function GamePage() {
           antiCheat.reset();
           answerTimer.start();
           if (msg.payload.round) {
-            setCurrentRound(msg.payload.round as GameRound & { question?: GameQuestion });
+            const roundData = msg.payload.round as GameRound & { question?: GameQuestion };
+            currentRoundNumRef.current = roundData.round_number;
+            setCurrentRound(roundData);
           }
           break;
         case 'round_reveal':
@@ -228,10 +234,27 @@ export default function GamePage() {
       setPlayers(p);
     }, []),
     onRoundUpdate: useCallback((round: GameRound & { question?: GameQuestion }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const roundNum = (round as any).round_number as number;
+
+      // Filter stale DB change events: if this round is older than what we're tracking,
+      // ignore it to prevent race conditions (e.g., old round's completeRound arriving
+      // after the new round's round_start broadcast)
+      if (currentRoundNumRef.current > 0 && roundNum < currentRoundNumRef.current) {
+        return;
+      }
+
+      // Update tracking ref if this is a newer round
+      if (roundNum > currentRoundNumRef.current) {
+        currentRoundNumRef.current = roundNum;
+      }
+
       setCurrentRound(round);
       setBuzzedIn(round.buzzed_in_player_id || null);
       if (round.status === 'revealed') setPhase('revealed');
       if (round.status === 'completed') {
+        // Only reset answer state if this completed round is the one we're currently on
+        // (not a stale update for a round we've already moved past)
         setHasSubmitted(false);
         setSelectedOption(null);
         setFreeText('');
@@ -330,6 +353,11 @@ export default function GamePage() {
   // 时间到自动提交
   useEffect(() => {
     if (timeRemaining === 0 && phase === 'playing' && !hasSubmitted) {
+      if (!buzzedIn || buzzedIn !== player?.id) {
+        // 未抢到答题权，直接标记已提交（不发送答案）
+        setHasSubmitted(true);
+        return;
+      }
       handleSubmitAnswer();
     }
   }, [timeRemaining]);
@@ -681,15 +709,16 @@ export default function GamePage() {
   // 揭晓答案阶段
   if (phase === 'revealed' && currentRound?.question) {
     const q = currentRound.question;
-    const isCorrect = myAnswer?.is_correct;
+    const isCorrect = myAnswer?.is_correct === true;
+    const didAnswer = myAnswer != null;
     const currentStreak = player?.streak || 0;
 
     return (
       <main className="min-h-[100dvh] px-4 py-6 max-w-lg mx-auto">
-        <div className={`text-center mb-6 animate-fadeIn ${isCorrect ? 'correct-celebration' : 'wrong-shake'}`}>
-          <div className="text-6xl mb-3">{isCorrect ? '🎉' : '😅'}</div>
-          <h2 className={`text-2xl font-bold ${isCorrect ? 'text-green-400' : 'text-red-400'}`}>
-            {isCorrect ? '回答正确！' : '回答错误'}
+        <div className={`text-center mb-6 animate-fadeIn ${isCorrect ? 'correct-celebration' : didAnswer ? 'wrong-shake' : ''}`}>
+          <div className="text-6xl mb-3">{isCorrect ? '🎉' : didAnswer ? '😅' : '⏰'}</div>
+          <h2 className={`text-2xl font-bold ${isCorrect ? 'text-green-400' : didAnswer ? 'text-red-400' : 'text-yellow-400'}`}>
+            {isCorrect ? '回答正确！' : didAnswer ? '回答错误' : '本题未作答'}
           </h2>
           {isCorrect && (
             <p className="text-lg font-bold text-blue-400 mt-2">
