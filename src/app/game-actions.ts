@@ -723,6 +723,17 @@ export async function getRoundAnswers(roundId: string) {
   return data;
 }
 
+export async function getMyAnswer(roundId: string, playerId: string) {
+  const supabase = await createAdminClient();
+  const { data } = await supabase
+    .from('game_answers')
+    .select('*')
+    .eq('round_id', roundId)
+    .eq('player_id', playerId)
+    .maybeSingle();
+  return data as GameAnswer | null;
+}
+
 // ============================================================
 // 管理后台 - 批量操作
 // ============================================================

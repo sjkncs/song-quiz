@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   getRoomByCode, getMyPlayer, getPlayers, joinRoom,
-  submitAnswer, getRankings, getCurrentRound,
+  submitAnswer, getRankings, getCurrentRound, getMyAnswer,
   signInAnonymously, getCurrentUser, buzzIn,
   adminGenerateRankings,
 } from '@/app/game-actions';
@@ -105,7 +105,7 @@ export default function GamePage() {
   // 反作弊
   const antiCheat = useAntiCheat();
   const answerTimer = useAnswerTimer();
-  const timerActive = phase === 'playing' && !hasSubmitted && !buzzedIn;
+  const timerActive = phase === 'playing' && !hasSubmitted;
   const timeRemaining = useCountdown(
     currentRound?.time_limit_sec || 60,
     timerActive
@@ -150,11 +150,36 @@ export default function GamePage() {
           const rk = await getRankings(r.id);
           setRankings(rk);
         } else if (r.status === 'playing' || r.status === 'starting') {
-          setPhase(r.status === 'starting' ? 'waiting' : 'playing');
           const round = await getCurrentRound(r.id);
           if (round) {
             setCurrentRound(round);
             currentRoundNumRef.current = round.round_number;
+
+            // 恢复抢答状态
+            if (round.buzzed_in_player_id) {
+              setBuzzedIn(round.buzzed_in_player_id);
+            }
+
+            // 检查玩家是否已答过此题
+            if (me) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const myAns = await getMyAnswer((round as any).id, me.id);
+              if (myAns) {
+                setMyAnswer(myAns);
+                setHasSubmitted(true);
+              }
+            }
+
+            // 根据回合状态设置正确的 phase
+            if (round.status === 'revealed') {
+              setPhase('revealed');
+            } else if (round.status === 'completed') {
+              setPhase('waiting');
+            } else {
+              setPhase('playing');
+            }
+          } else {
+            setPhase(r.status === 'starting' ? 'waiting' : 'playing');
           }
         } else {
           setPhase('waiting');
