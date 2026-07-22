@@ -216,7 +216,7 @@ export default function GamePage() {
           setPhase('revealed');
           break;
         case 'media_unlock':
-          if (currentRound && msg.payload.round_id === currentRound.id) {
+          if (currentRound && (msg.payload.round_id === currentRound.id || msg.payload.round_id === 'all')) {
             setCurrentRound({ ...currentRound, media_unlocked: msg.payload.unlocked as boolean });
           }
           break;

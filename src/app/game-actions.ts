@@ -316,6 +316,7 @@ export async function createRound(
       question_id: questionId,
       time_limit_sec: timeLimitSec || 60,
       status: 'pending',
+      media_unlocked: true, // 默认开放媒体权限
     })
     .select()
     .single();
@@ -349,6 +350,16 @@ export async function toggleMediaUnlock(roundId: string, unlocked: boolean) {
     .update({ media_unlocked: unlocked })
     .eq('id', roundId);
   if (error) throw new Error('切换媒体权限失败');
+}
+
+// 一键开放房间所有回合的媒体权限
+export async function unlockAllMedia(roomId: string) {
+  const supabase = await createAdminClient();
+  const { error } = await supabase
+    .from('game_rounds')
+    .update({ media_unlocked: true })
+    .eq('room_id', roomId);
+  if (error) throw new Error('批量开放媒体失败');
 }
 
 // ============================================================

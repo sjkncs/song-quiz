@@ -8,7 +8,7 @@ import {
   startRound, revealRound, completeRound, goBackRound, resetRound, toggleMediaUnlock,
   adminResetBuzzIn, adminAssignBuzzIn,
   getRoundAnswers, assignGroup, adminApplyScore, adminSetScore, removePlayer,
-  adminGenerateRankings, getRankings, getBonusWinners,
+  adminGenerateRankings, getRankings, getBonusWinners, unlockAllMedia,
 } from '@/app/game-actions';
 import { useGameRealtime } from '@/hooks/useGameRealtime';
 import GameAssistant from '@/components/GameAssistant';
@@ -149,6 +149,22 @@ export default function AdminRoomPage() {
       await broadcast({
         type: 'media_unlock',
         payload: { round_id: currentRound.id, unlocked: newUnlocked },
+      });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '操作失败');
+    }
+  };
+
+  const handleUnlockAllMedia = async () => {
+    if (!room) return;
+    try {
+      await unlockAllMedia(room.id);
+      if (currentRound) {
+        setCurrentRound({ ...currentRound, media_unlocked: true });
+      }
+      await broadcast({
+        type: 'media_unlock',
+        payload: { round_id: 'all', unlocked: true },
       });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '操作失败');
@@ -519,16 +535,24 @@ export default function AdminRoomPage() {
                     ) : null}
                   </div>
                   {/* 媒体权限开关 */}
-                  <button
-                    onClick={handleToggleMedia}
-                    className={`mt-2 px-4 py-2 rounded-lg text-xs font-medium transition-all ${
-                      currentRound.media_unlocked
-                        ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                        : 'bg-[rgba(148,163,184,0.1)] text-[var(--text-secondary)] border border-[var(--glass-border)]'
-                    }`}
-                  >
-                    {currentRound.media_unlocked ? '🔓 玩家可见媒体' : '🔒 玩家不可见媒体'}
-                  </button>
+                  <div className="flex gap-2 mt-2 flex-wrap">
+                    <button
+                      onClick={handleToggleMedia}
+                      className={`px-4 py-2 rounded-lg text-xs font-medium transition-all ${
+                        currentRound.media_unlocked
+                          ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                          : 'bg-[rgba(148,163,184,0.1)] text-[var(--text-secondary)] border border-[var(--glass-border)]'
+                      }`}
+                    >
+                      {currentRound.media_unlocked ? '🔓 玩家可见媒体' : '🔒 玩家不可见媒体'}
+                    </button>
+                    <button
+                      onClick={handleUnlockAllMedia}
+                      className="px-4 py-2 rounded-lg text-xs font-medium transition-all bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30"
+                    >
+                      🔓 一键开放全部媒体
+                    </button>
+                  </div>
                   </>
                 )}
                 <p className="text-sm leading-relaxed mb-3">{currentRound.question.question_text}</p>
