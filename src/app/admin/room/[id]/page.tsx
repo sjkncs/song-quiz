@@ -495,8 +495,9 @@ export default function AdminRoomPage() {
                 {/* 媒体播放器 - 仅主持人可见 */}
                 {currentRound.question.media_url && (
                   <>
-                  <div className="mb-4 rounded-xl overflow-hidden bg-black/30">
+                  <div className="mb-4 rounded-xl overflow-hidden bg-black/30 relative">
                     {(currentRound.question.media_type === 'video' || (currentRound.question.type === 'video_clip')) ? (
+                      <>
                       <video
                         src={currentRound.question.media_url}
                         controls
@@ -504,6 +505,8 @@ export default function AdminRoomPage() {
                         className="w-full max-h-64 object-contain"
                         playsInline
                       />
+                      <div className="video-spoiler-blur" />
+                      </>
                     ) : (currentRound.question.media_type === 'audio' || currentRound.question.type === 'song_guess') ? (
                       <div className="p-4 flex items-center gap-3">
                         <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0 animate-pulse">

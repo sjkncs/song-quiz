@@ -49,6 +49,7 @@ function MediaPlayArea({ mediaUrl, mediaType }: { mediaUrl: string; mediaType: s
             playsInline
             className="w-full max-h-48 object-contain"
           />
+          <div className="video-spoiler-blur" />
         </>
       ) : mediaType === 'audio' ? (
         <div className="p-4 flex items-center gap-3">
