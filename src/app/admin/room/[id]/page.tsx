@@ -3,9 +3,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  getRoom, getPlayers, getActiveQuestions, getCurrentRound,
+  getRoom, getPlayers, getActiveQuestions, getCurrentRound, getRoundByNumber,
   updateRoomStatus, updateCurrentRound, createRound,
-  startRound, revealRound, completeRound, goBackRound, toggleMediaUnlock,
+  startRound, revealRound, completeRound, goBackRound, resetRound, toggleMediaUnlock,
   adminResetBuzzIn, adminAssignBuzzIn,
   getRoundAnswers, assignGroup, adminApplyScore, adminSetScore, removePlayer,
   adminGenerateRankings, getRankings, getBonusWinners,
@@ -230,9 +230,21 @@ export default function AdminRoomPage() {
         });
       }
       const q = questions[nextNum - 1];
-      const round = await createRound(roomId, nextNum, q.id, room.config.time_per_question_sec || 30);
+
+      // 检查下一轮是否已存在（从"返回上一题"回来时，旧轮次仍存在）
+      let existingRound = await getRoundByNumber(roomId, nextNum);
+      let round: GameRound;
+
+      if (existingRound) {
+        // 复用已有轮次：重置状态并清除抢答/答题记录
+        await resetRound(existingRound.id);
+        round = existingRound;
+      } else {
+        round = await createRound(roomId, nextNum, q.id, room.config.time_per_question_sec || 30);
+        await startRound(round.id);
+      }
+
       await updateCurrentRound(roomId, nextNum);
-      await startRound(round.id);
       const roundWithQuestion = { ...round, question: q };
       setCurrentRound(roundWithQuestion);
       setAnswers([]);

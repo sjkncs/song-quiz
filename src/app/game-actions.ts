@@ -558,6 +558,27 @@ export async function getCurrentRound(roomId: string) {
   return data as GameRound & { question: GameQuestion };
 }
 
+export async function getRoundByNumber(roomId: string, roundNumber: number) {
+  const supabase = await createAdminClient();
+  const { data } = await supabase
+    .from('game_rounds')
+    .select('*, question:game_questions(*)')
+    .eq('room_id', roomId)
+    .eq('round_number', roundNumber)
+    .maybeSingle();
+  return data as (GameRound & { question: GameQuestion }) | null;
+}
+
+export async function resetRound(roundId: string) {
+  const supabase = await createAdminClient();
+  // 清除该轮的答题记录和抢答状态
+  await supabase.from('game_answers').delete().eq('round_id', roundId);
+  await supabase
+    .from('game_rounds')
+    .update({ status: 'active', buzzed_in_player_id: null, started_at: new Date().toISOString() })
+    .eq('id', roundId);
+}
+
 // ============================================================
 // 答题
 // ============================================================
