@@ -168,6 +168,7 @@ export type GameBroadcastType =
   | 'screen_switch'
   | 'yellow_card'
   | 'timer_sync'
+  | 'timer_start'
   | 'score_update'
   | 'media_unlock'
   | 'buzz_in'

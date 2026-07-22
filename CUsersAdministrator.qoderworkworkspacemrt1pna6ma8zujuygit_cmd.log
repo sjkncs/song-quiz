@@ -1,0 +1,11 @@
+Unstaged changes after reset:
+M	Esong_quizgit_err.log
+M	Esong_quizgit_out.log
+D	git_out.log
+ M "E\357\200\272song_quizgit_err.log"
+ M "E\357\200\272song_quizgit_out.log"
+ D build_out.log
+ D git_out.log
+?? "C\357\200\272UsersAdministrator.qoderworkworkspacemrt1pna6ma8zujuygit_cmd.log"
+?? "C\357\200\272UsersAdministrator.qoderworkworkspacemrt1pna6ma8zujuyport_check.txt"
+?? "E\357\200\272song_quizgitlog.txt"

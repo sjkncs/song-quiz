@@ -100,12 +100,13 @@ export default function GamePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [buzzedIn, setBuzzedIn] = useState<string | null>(null); // player_id who buzzed in
+  const [timerStarted, setTimerStarted] = useState(false); // host-controlled timer start
   const currentRoundNumRef = useRef(0); // track latest round number to filter stale DB updates
 
   // 反作弊
   const antiCheat = useAntiCheat();
   const answerTimer = useAnswerTimer();
-  const timerActive = phase === 'playing' && !hasSubmitted;
+  const timerActive = phase === 'playing' && !hasSubmitted && timerStarted;
   const timeRemaining = useCountdown(
     currentRound?.time_limit_sec || 60,
     timerActive
@@ -202,15 +203,19 @@ export default function GamePage() {
           setFreeText('');
           setMyAnswer(null);
           setBuzzedIn(null);
+          setTimerStarted(false); // 等待主持人手动开始计时
           setStreakMsg('');
           setWarningMsg('');
           antiCheat.reset();
-          answerTimer.start();
           if (msg.payload.round) {
             const roundData = msg.payload.round as GameRound & { question?: GameQuestion };
             currentRoundNumRef.current = roundData.round_number;
             setCurrentRound(roundData);
           }
+          break;
+        case 'timer_start':
+          setTimerStarted(true);
+          answerTimer.start();
           break;
         case 'round_reveal':
           setPhase('revealed');
@@ -529,16 +534,21 @@ export default function GamePage() {
             <div className="timer-ring">
               <svg width="80" height="80" viewBox="0 0 80 80">
                 <circle className="bg" cx="40" cy="40" r="35"/>
-                <circle
-                  className={`fg ${timeRemaining <= 5 ? 'danger' : timeRemaining <= 10 ? 'warning' : ''}`}
-                  cx="40" cy="40" r="35"
-                  strokeDasharray={circumference}
-                  strokeDashoffset={offset}
-                />
+                {timerStarted && (
+                  <circle
+                    className={`fg ${timeRemaining <= 5 ? 'danger' : timeRemaining <= 10 ? 'warning' : ''}`}
+                    cx="40" cy="40" r="35"
+                    strokeDasharray={circumference}
+                    strokeDashoffset={offset}
+                  />
+                )}
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
-                <span className={`text-xl font-bold ${timeRemaining <= 5 ? 'text-red-400' : ''}`}>
-                  {timeRemaining}
+                <span className={`text-xl font-bold ${
+                  !timerStarted ? 'text-green-400' :
+                  timeRemaining <= 5 ? 'text-red-400' : ''
+                }`}>
+                  {timerStarted ? timeRemaining : '准备'}
                 </span>
               </div>
             </div>

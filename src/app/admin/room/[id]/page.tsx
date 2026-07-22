@@ -295,6 +295,18 @@ export default function AdminRoomPage() {
     setActionLoading(false);
   };
 
+  const handleStartTimer = async () => {
+    if (!currentRound) return;
+    try {
+      await broadcast({
+        type: 'timer_start',
+        payload: { round_id: currentRound.id },
+      });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '开始计时失败');
+    }
+  };
+
   const handleFinishGame = async () => {
     setActionLoading(true);
     setError('');
@@ -466,6 +478,11 @@ export default function AdminRoomPage() {
                 {room?.status === 'waiting' && (
                   <button onClick={handleStartGame} disabled={actionLoading || players.length < 1} className="btn-success" style={{ width: 'auto', padding: '12px 24px' }}>
                     {actionLoading ? '处理中...' : `开始游戏 (${players.length}人已加入)`}
+                  </button>
+                )}
+                {(room?.status === 'starting' || room?.status === 'playing') && currentRound?.status === 'active' && (
+                  <button onClick={handleStartTimer} disabled={actionLoading} className="btn-success" style={{ width: 'auto', padding: '12px 24px' }}>
+                    ▶️ 开始计时
                   </button>
                 )}
                 {(room?.status === 'starting' || room?.status === 'playing') && currentRound?.status === 'active' && (
