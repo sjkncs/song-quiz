@@ -137,8 +137,8 @@ export default function GamePage() {
         // 尝试获取当前玩家，如果没有则自动加入
         let me = await getMyPlayer(r.id);
         if (!me) {
-          // 自动加入房间，默认A组（主持人稍后调整）
-          me = await joinRoom(r.id, storedRealName, storedNickname, 'A');
+          // 自动加入房间，随机分配A/B组（主持人稍后可调整）
+          me = await joinRoom(r.id, storedRealName, storedNickname, Math.random() < 0.5 ? 'A' : 'B');
         }
         setPlayer(me);
 
@@ -248,8 +248,13 @@ export default function GamePage() {
         case 'buzz_in_reset':
           setBuzzedIn(null);
           break;
+        case 'player_group_change':
+          if (player && msg.payload.player_id === player.id) {
+            setPlayer({ ...player, group_label: msg.payload.group_label as 'A' | 'B' });
+          }
+          break;
       }
-    }, [room, antiCheat, answerTimer]),
+    }, [room, player, antiCheat, answerTimer]),
     onRoomUpdate: useCallback((r: GameRoom) => {
       setRoom(r);
       if (r.status === 'finished') setPhase('finished');

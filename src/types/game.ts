@@ -172,6 +172,7 @@ export type GameBroadcastType =
   | 'media_unlock'
   | 'buzz_in'
   | 'buzz_in_reset'
+  | 'player_group_change'
   | 'admin_override';
 
 export interface GameBroadcast {

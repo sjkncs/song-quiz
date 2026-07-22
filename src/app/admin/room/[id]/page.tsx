@@ -322,6 +322,10 @@ export default function AdminRoomPage() {
       await assignGroup(playerId, group);
       const p = await getPlayers(roomId);
       setPlayers(p);
+      await broadcast({
+        type: 'player_group_change',
+        payload: { player_id: playerId, group_label: group },
+      });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '分组失败');
     }

@@ -1,0 +1,36 @@
+▲ Next.js 16.2.10 (Turbopack)
+- Environments: .env.local
+- Experiments (use with caution):
+  · serverActions
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 5.2s
+  Running TypeScript ...
+  Finished TypeScript in 5.4s ...
+  Collecting page data using 14 workers ...
+  Generating static pages using 14 workers (0/11) ...
+  Generating static pages using 14 workers (2/11) 
+  Generating static pages using 14 workers (5/11) 
+  Generating static pages using 14 workers (8/11) 
+✓ Generating static pages using 14 workers (11/11) in 1008ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ○ /admin
+├ ƒ /admin/room/[id]
+├ ƒ /api/ai/chat
+├ ƒ /api/game-ai
+├ ƒ /game/[roomId]
+├ ○ /leaderboard
+├ ○ /login
+├ ○ /play
+└ ○ /profile
+
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
