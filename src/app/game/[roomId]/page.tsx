@@ -154,7 +154,13 @@ export default function GamePage() {
         } else if (r.status === 'playing' || r.status === 'starting') {
           const round = await getCurrentRound(r.id);
           if (round) {
-            setCurrentRound(round);
+            // Sanitize: strip answer fields for active/pending rounds
+            if (round.question && (round.status === 'active' || round.status === 'pending')) {
+              const { correct_answer, correct_index, ...safeQ } = round.question;
+              setCurrentRound({ ...round, question: safeQ as GameQuestion });
+            } else {
+              setCurrentRound(round);
+            }
             currentRoundNumRef.current = round.round_number;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             currentRoundIdRef.current = (round as any).id || '';
@@ -567,6 +573,14 @@ export default function GamePage() {
 
     return (
       <main className="min-h-[100dvh] px-4 py-6 max-w-lg mx-auto">
+        {/* 提交错误提示 - 之前只在 !room 时显示，答题阶段提交失败用户完全看不到错误 */}
+        {error && (
+          <div className="mb-4 p-3 rounded-lg bg-red-500/15 border border-red-500/30 text-sm text-red-400 text-center">
+            {error}
+            <button onClick={() => setError('')} className="ml-2 text-red-400 underline text-xs">关闭</button>
+          </div>
+        )}
+
         {/* 顶部信息栏 */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
@@ -808,6 +822,12 @@ export default function GamePage() {
 
     return (
       <main className="min-h-[100dvh] px-4 py-6 max-w-lg mx-auto">
+        {error && (
+          <div className="mb-4 p-3 rounded-lg bg-red-500/15 border border-red-500/30 text-sm text-red-400 text-center">
+            {error}
+            <button onClick={() => setError('')} className="ml-2 text-red-400 underline text-xs">关闭</button>
+          </div>
+        )}
         <div className={`text-center mb-6 animate-fadeIn ${isCorrect ? 'correct-celebration' : didAnswer ? 'wrong-shake' : ''}`}>
           <div className="text-6xl mb-3">{isCorrect ? '🎉' : didAnswer ? '😅' : '⏰'}</div>
           <h2 className={`text-2xl font-bold ${isCorrect ? 'text-green-400' : didAnswer ? 'text-red-400' : 'text-yellow-400'}`}>
