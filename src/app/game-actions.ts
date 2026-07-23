@@ -387,7 +387,7 @@ export async function adminResetBuzzIn(roundId: string) {
   const supabase = await createAdminClient();
   const { error } = await supabase
     .from('game_rounds')
-    .update({ buzzed_in_player_id: null })
+    .update({ buzzed_in_player_id: null, buzzed_in_at: null })
     .eq('id', roundId);
   if (error) throw new Error('重置抢答失败');
 }
@@ -396,7 +396,7 @@ export async function adminAssignBuzzIn(roundId: string, playerId: string) {
   const supabase = await createAdminClient();
   const { error } = await supabase
     .from('game_rounds')
-    .update({ buzzed_in_player_id: playerId })
+    .update({ buzzed_in_player_id: playerId, buzzed_in_at: new Date().toISOString() })
     .eq('id', roundId);
   if (error) throw new Error('指定答题人失败');
 }

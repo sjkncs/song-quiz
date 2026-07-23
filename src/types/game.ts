@@ -96,6 +96,7 @@ export interface GameRound {
   points_multiplier: number;
   media_unlocked: boolean;
   buzzed_in_player_id: string | null;
+  buzzed_in_at: string | null;
   // join
   question?: GameQuestion;
 }

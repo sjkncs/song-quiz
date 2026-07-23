@@ -605,8 +605,14 @@ export default function AdminRoomPage() {
                 {currentRound.buzzed_in_player_id && (
                   <div className="flex items-center gap-3 mb-3 p-3 rounded-lg bg-orange-500/10 border border-orange-500/30">
                     <span className="text-orange-400 font-bold text-sm">
-                      已抢答: {players.find(p => p.id === currentRound.buzzed_in_player_id)?.nickname || '未知玩家'}
+                      ⚡ {players.find(p => p.id === currentRound.buzzed_in_player_id)?.nickname || '未知玩家'} 抢到了
                     </span>
+                    {currentRound.buzzed_in_at && (
+                      <span className="text-xs text-orange-300/70 font-mono">
+                        {new Date(currentRound.buzzed_in_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </span>
+                    )}
+                    <div className="flex-1" />
                     <button
                       onClick={handleResetBuzzIn}
                       className="px-3 py-1 rounded text-xs bg-orange-500/20 text-orange-400 hover:bg-orange-500/30 transition-colors"

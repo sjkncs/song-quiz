@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
 
     const { error } = await supabase
       .from('game_rounds')
-      .update({ buzzed_in_player_id: playerId })
+      .update({ buzzed_in_player_id: playerId, buzzed_in_at: new Date().toISOString() })
       .eq('id', roundId)
       .is('buzzed_in_player_id', null)
       .select('id')
