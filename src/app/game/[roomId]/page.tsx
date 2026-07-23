@@ -296,6 +296,23 @@ export default function GamePage() {
       if (roundNum > currentRoundNumRef.current) {
         currentRoundNumRef.current = roundNum;
         currentRoundIdRef.current = roundId;
+        // Immediately transition to 'playing' when a new round appears in DB.
+        // This closes the race window where the new round's DB INSERT/UPDATE
+        // arrives BEFORE the round_start broadcast, which previously left
+        // phase stuck at 'revealed' while currentRound already held the new
+        // question data — briefly exposing the new answer to the player.
+        if (round.status !== 'completed' && round.status !== 'revealed') {
+          setPhase('playing');
+          setHasSubmitted(false);
+          setSelectedOption(null);
+          setFreeText('');
+          setMyAnswer(null);
+          setBuzzedIn(null);
+          setTimerStarted(false);
+          setStreakMsg('');
+          setWarningMsg('');
+          antiCheat.reset();
+        }
       }
 
       setCurrentRound(round);
