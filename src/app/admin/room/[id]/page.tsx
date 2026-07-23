@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   getRoom, getPlayers, getActiveQuestions, getCurrentRound, getRoundByNumber,
@@ -76,34 +76,54 @@ export default function AdminRoomPage() {
   }, [roomId]);
 
   // 实时同步
+  // Debounced refresh to prevent N+1 query storm with 30+ players
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingRefreshRef = useRef<{ answers: boolean; players: boolean; bonus: boolean }>({ answers: false, players: false, bonus: false });
+
+  const scheduleRefresh = useCallback((needs: { answers?: boolean; players?: boolean; bonus?: boolean }) => {
+    if (needs.answers) pendingRefreshRef.current.answers = true;
+    if (needs.players) pendingRefreshRef.current.players = true;
+    if (needs.bonus) pendingRefreshRef.current.bonus = true;
+
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = setTimeout(async () => {
+      const flags = { ...pendingRefreshRef.current };
+      pendingRefreshRef.current = { answers: false, players: false, bonus: false };
+
+      const promises: Promise<void>[] = [];
+      if (flags.answers && currentRound) {
+        promises.push(getRoundAnswers(currentRound.id).then(setAnswers).catch(() => {}));
+      }
+      if (flags.players) {
+        promises.push(getPlayers(roomId).then(setPlayers).catch(() => {}));
+      }
+      if (flags.bonus) {
+        promises.push(getBonusWinners(roomId).then(setBonusWinners).catch(() => {}));
+      }
+      await Promise.all(promises);
+    }, 500);
+  }, [currentRound, roomId]);
+
   const { broadcast } = useGameRealtime({
     roomId,
     onRoomUpdate: useCallback((r: GameRoom) => setRoom(r), []),
     onPlayerUpdate: useCallback((p: GamePlayer[]) => setPlayers(p), []),
-    onRoundUpdate: useCallback(async (round: GameRound & { question?: GameQuestion }) => {
+    onRoundUpdate: useCallback((round: GameRound & { question?: GameQuestion }) => {
       setCurrentRound(round);
-      try {
-        const ans = await getRoundAnswers(round.id);
-        setAnswers(ans);
-      } catch {}
-    }, []),
-    onBroadcast: useCallback(async (msg: GameBroadcast) => {
-      if (msg.type === 'player_answer' || msg.type === 'round_complete' || msg.type === 'buzz_in') {
-        if (currentRound) {
-          const ans = await getRoundAnswers(currentRound.id);
-          setAnswers(ans);
-        }
-        const p = await getPlayers(roomId);
-        setPlayers(p);
-        // 刷新彩蛋奖励
-        if (msg.type === 'player_answer') {
-          try {
-            const bw = await getBonusWinners(roomId);
-            setBonusWinners(bw);
-          } catch {}
-        }
+      // Only refresh answers when round status changes (not on every DB event like buzz-in)
+      if (round.status === 'revealed' || round.status === 'completed') {
+        scheduleRefresh({ answers: true });
       }
-    }, [currentRound, roomId]),
+    }, [scheduleRefresh]),
+    onBroadcast: useCallback((msg: GameBroadcast) => {
+      if (msg.type === 'player_answer') {
+        scheduleRefresh({ answers: true, players: true });
+      } else if (msg.type === 'round_complete') {
+        scheduleRefresh({ answers: true, players: true, bonus: true });
+      } else if (msg.type === 'buzz_in') {
+        scheduleRefresh({ players: true });
+      }
+    }, [scheduleRefresh]),
   });
 
   // ============================================================

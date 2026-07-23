@@ -369,24 +369,18 @@ export async function unlockAllMedia(roomId: string) {
 export async function buzzIn(roundId: string, playerId: string) {
   const supabase = await createAdminClient();
 
-  // 检查是否已有人抢答
-  const { data: round } = await supabase
-    .from('game_rounds')
-    .select('buzzed_in_player_id')
-    .eq('id', roundId)
-    .single();
-
-  if (round?.buzzed_in_player_id) {
-    throw new Error('已经有人抢答了');
-  }
-
+  // Atomic CAS update: only succeeds if buzzed_in_player_id IS NULL.
+  // .single() throws if 0 rows matched (someone else already buzzed in),
+  // guaranteeing exactly one winner among concurrent callers.
   const { error } = await supabase
     .from('game_rounds')
     .update({ buzzed_in_player_id: playerId })
     .eq('id', roundId)
-    .is('buzzed_in_player_id', null); // 原子锁定，防止并发
+    .is('buzzed_in_player_id', null)
+    .select('id')
+    .single();
 
-  if (error) throw new Error('抢答失败');
+  if (error) throw new Error('已经有人抢答了');
 }
 
 export async function adminResetBuzzIn(roundId: string) {

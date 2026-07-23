@@ -215,7 +215,13 @@ export default function GamePage() {
             currentRoundNumRef.current = roundData.round_number;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             currentRoundIdRef.current = (roundData as any).id || '';
-            setCurrentRound(roundData);
+            // Strip answer fields to prevent leakage via DevTools
+            if (roundData.question) {
+              const { correct_answer, correct_index, ...safeQ } = roundData.question;
+              setCurrentRound({ ...roundData, question: safeQ as GameQuestion });
+            } else {
+              setCurrentRound(roundData);
+            }
           }
           break;
         case 'timer_start':
@@ -315,7 +321,14 @@ export default function GamePage() {
         }
       }
 
-      setCurrentRound(round);
+      // Sanitize: strip answer fields when round is active/pending to prevent
+      // answer leakage via React DevTools or browser console inspection.
+      if (round.question && (round.status === 'active' || round.status === 'pending')) {
+        const { correct_answer, correct_index, ...safeQuestion } = round.question;
+        setCurrentRound({ ...round, question: safeQuestion as GameQuestion });
+      } else {
+        setCurrentRound(round);
+      }
       setBuzzedIn(round.buzzed_in_player_id || null);
 
       // Only set phase='revealed' if this is the current round (by ID match).

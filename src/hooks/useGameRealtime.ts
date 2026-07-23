@@ -60,6 +60,9 @@ export function useGameRealtime(options: UseGameRealtimeOptions) {
   useEffect(() => {
     const dbChannel = supabase.channel(`db:${roomId}`);
 
+    // Question cache: avoid re-fetching the same question on every round DB event
+    const questionCache = new Map<string, GameQuestion>();
+
     dbChannel
       .on(
         'postgres_changes',
@@ -74,12 +77,19 @@ export function useGameRealtime(options: UseGameRealtimeOptions) {
         async (payload) => {
           const roundData = payload.new as GameRound;
           if (roundData.question_id) {
-            const { data: question } = await supabase
-              .from('game_questions')
-              .select('*')
-              .eq('id', roundData.question_id)
-              .single();
-            onRoundUpdateRef.current?.({ ...roundData, question: question as GameQuestion });
+            let question = questionCache.get(roundData.question_id);
+            if (!question) {
+              const { data } = await supabase
+                .from('game_questions')
+                .select('*')
+                .eq('id', roundData.question_id)
+                .single();
+              if (data) {
+                question = data as GameQuestion;
+                questionCache.set(roundData.question_id, question);
+              }
+            }
+            onRoundUpdateRef.current?.({ ...roundData, question });
           } else {
             onRoundUpdateRef.current?.(roundData);
           }
@@ -87,17 +97,22 @@ export function useGameRealtime(options: UseGameRealtimeOptions) {
       );
 
     // 仅管理端订阅玩家变更，避免 N 个玩家客户端产生 O(N²) 订阅风暴
+    // 防抖 500ms: 30 个玩家同时答题产生 30 次 DB 变更，合并为 1 次查询
     if (subscribeToPlayers) {
+      let playerRefreshTimer: ReturnType<typeof setTimeout> | null = null;
       dbChannel.on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'game_players', filter: `room_id=eq.${roomId}` },
-        async () => {
-          const { data } = await supabase
-            .from('game_players')
-            .select('*')
-            .eq('room_id', roomId)
-            .order('joined_at', { ascending: true });
-          if (data) onPlayerUpdateRef.current?.(data as GamePlayer[]);
+        () => {
+          if (playerRefreshTimer) clearTimeout(playerRefreshTimer);
+          playerRefreshTimer = setTimeout(async () => {
+            const { data } = await supabase
+              .from('game_players')
+              .select('*')
+              .eq('room_id', roomId)
+              .order('joined_at', { ascending: true });
+            if (data) onPlayerUpdateRef.current?.(data as GamePlayer[]);
+          }, 500);
         }
       );
     }
