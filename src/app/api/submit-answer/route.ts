@@ -27,22 +27,34 @@ export async function POST(req: NextRequest) {
       screenSwitches,
     } = body;
 
+    console.log('[submit-answer] request:', { roundId, playerId, roomId, selectedOption, selectedText: selectedText?.substring(0, 50), timeTakenMs, screenSwitches });
+
     if (!roundId || !playerId || !roomId) {
       return NextResponse.json({ error: '缺少必要参数' }, { status: 400 });
+    }
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !supabaseKey) {
+      console.error('[submit-answer] Missing env vars:', { hasUrl: !!supabaseUrl, hasKey: !!supabaseKey });
+      return NextResponse.json({ error: '服务器配置错误：缺少Supabase环境变量' }, { status: 500 });
     }
 
     const supabase = getAdminClient();
 
     // 获取题目信息 + 抢答状态
-    const { data: round } = await supabase
+    const { data: round, error: roundErr } = await supabase
       .from('game_rounds')
       .select('*, question:game_questions(*)')
       .eq('id', roundId)
       .single();
 
-    if (!round) {
+    if (roundErr || !round) {
+      console.error('[submit-answer] round fetch error:', roundErr?.message, roundErr?.code);
       return NextResponse.json({ error: '回合不存在' }, { status: 404 });
     }
+
+    console.log('[submit-answer] round found:', { roundId: round.id, status: round.status, buzzedIn: round.buzzed_in_player_id, questionId: round.question_id });
 
     // 抢答锁定检查
     if (round.buzzed_in_player_id && round.buzzed_in_player_id !== playerId) {
@@ -50,6 +62,11 @@ export async function POST(req: NextRequest) {
     }
 
     const question = round.question;
+    if (!question) {
+      console.error('[submit-answer] question is null for round:', roundId);
+      return NextResponse.json({ error: '题目数据缺失' }, { status: 500 });
+    }
+
     let isCorrect: boolean;
 
     // Only use index-based matching when BOTH correct_index AND options exist
@@ -64,72 +81,87 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    console.log('[submit-answer] judged:', { isCorrect, hasOptions, correctIndex: question.correct_index, selectedOption });
+
     const hasYellowCard = (screenSwitches || 0) >= 2;
     const pointsEarned = isCorrect ? 100 : 0;
 
+    const insertPayload = {
+      round_id: roundId,
+      player_id: playerId,
+      room_id: roomId,
+      selected_option: selectedOption ?? -1,
+      selected_text: selectedText || '',
+      is_correct: isCorrect,
+      time_taken_ms: timeTakenMs || 0,
+      points_earned: pointsEarned,
+      screen_switches: screenSwitches || 0,
+      has_yellow_card: hasYellowCard,
+    };
+
     const { data, error } = await supabase
       .from('game_answers')
-      .insert({
-        round_id: roundId,
-        player_id: playerId,
-        room_id: roomId,
-        selected_option: selectedOption ?? -1,
-        selected_text: selectedText || '',
-        is_correct: isCorrect,
-        time_taken_ms: timeTakenMs || 0,
-        points_earned: pointsEarned,
-        screen_switches: screenSwitches || 0,
-        has_yellow_card: hasYellowCard,
-      })
+      .insert(insertPayload)
       .select()
       .single();
 
     if (error) {
+      console.error('[submit-answer] INSERT error:', { code: error.code, message: error.message, details: error.details, hint: error.hint });
       if (error.code === '23505') {
         return NextResponse.json({ error: '你已经回答过了' }, { status: 409 });
       }
-      return NextResponse.json({ error: '提交答案失败' }, { status: 500 });
+      return NextResponse.json({ error: `提交答案失败: ${error.message}`, code: error.code }, { status: 500 });
     }
 
-    // 记录反作弊日志
-    if ((screenSwitches || 0) > 0) {
-      await supabase.from('anti_cheat_logs').insert({
-        room_id: roomId,
-        round_id: roundId,
-        player_id: playerId,
-        event_type: 'screen_switch',
-        details: { count: screenSwitches },
-      });
-    }
-    if (hasYellowCard) {
-      await supabase.from('anti_cheat_logs').insert({
-        room_id: roomId,
-        round_id: roundId,
-        player_id: playerId,
-        event_type: 'yellow_card',
-        details: { screen_switches: screenSwitches },
-      });
+    console.log('[submit-answer] answer inserted:', data?.id);
+
+    // 记录反作弊日志（不阻塞主流程）
+    try {
+      if ((screenSwitches || 0) > 0) {
+        await supabase.from('anti_cheat_logs').insert({
+          room_id: roomId,
+          round_id: roundId,
+          player_id: playerId,
+          event_type: 'screen_switch',
+          details: { count: screenSwitches },
+        });
+      }
+      if (hasYellowCard) {
+        await supabase.from('anti_cheat_logs').insert({
+          room_id: roomId,
+          round_id: roundId,
+          player_id: playerId,
+          event_type: 'yellow_card',
+          details: { screen_switches: screenSwitches },
+        });
+      }
+    } catch (logErr) {
+      console.warn('[submit-answer] anti-cheat log insert failed (non-fatal):', logErr);
     }
 
     // 更新玩家积分和统计（原子递增）
-    const { data: currentPlayer } = await supabase
-      .from('game_players')
-      .select('streak')
-      .eq('id', playerId)
-      .single();
+    try {
+      const { data: currentPlayer } = await supabase
+        .from('game_players')
+        .select('streak')
+        .eq('id', playerId)
+        .single();
 
-    const newStreak = isCorrect ? ((currentPlayer?.streak || 0) + 1) : 0;
-    await supabase.rpc('update_player_score_atomic', {
-      p_player_id: playerId,
-      p_score_delta: pointsEarned,
-      p_correct_delta: isCorrect ? 1 : 0,
-      p_wrong_delta: isCorrect ? 0 : 1,
-      p_new_streak: newStreak,
-    });
+      const newStreak = isCorrect ? ((currentPlayer?.streak || 0) + 1) : 0;
+      await supabase.rpc('update_player_score_atomic', {
+        p_player_id: playerId,
+        p_score_delta: pointsEarned,
+        p_correct_delta: isCorrect ? 1 : 0,
+        p_wrong_delta: isCorrect ? 0 : 1,
+        p_new_streak: newStreak,
+      });
+    } catch (scoreErr) {
+      console.warn('[submit-answer] score update failed (non-fatal):', scoreErr);
+    }
 
     return NextResponse.json({ answer: data });
   } catch (err) {
-    console.error('submit-answer error:', err);
+    console.error('[submit-answer] UNCAUGHT error:', err instanceof Error ? err.message : String(err), err instanceof Error ? err.stack : '');
     const msg = err instanceof Error ? err.message : '提交答案时发生未知错误';
     return NextResponse.json({ error: msg }, { status: 500 });
   }
