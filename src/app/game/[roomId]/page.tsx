@@ -4,8 +4,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   getRoomByCode, getMyPlayer, getPlayers, joinRoom,
-  submitAnswer, getRankings, getCurrentRound, getMyAnswer,
-  signInAnonymously, getCurrentUser, buzzIn,
+  getRankings, getCurrentRound, getMyAnswer,
+  signInAnonymously, getCurrentUser,
   adminGenerateRankings,
 } from '@/app/game-actions';
 import { useGameRealtime, useAntiCheat, useCountdown, useAnswerTimer } from '@/hooks/useGameRealtime';
@@ -362,7 +362,7 @@ export default function GamePage() {
     subscribeToPlayers: false, // 玩家端不订阅玩家变更，避免 O(N²) 订阅风暴
   });
 
-  // 提交答案
+  // 提交答案（通过 API Route 绕过 Server Action 序列化问题）
   const handleSubmitAnswer = async () => {
     if (!currentRound || !player || !room || hasSubmitted) return;
 
@@ -377,15 +377,26 @@ export default function GamePage() {
     const timeTaken = answerTimer.getElapsed();
 
     try {
-      const answer = await submitAnswer(
-        currentRound.id,
-        player.id,
-        room.id,
-        selectedOption ?? -1,
-        isFreeText ? freeText.trim() : (question.options?.[selectedOption!]?.text || ''),
-        timeTaken,
-        antiCheat.screenSwitches
-      );
+      const res = await fetch('/api/submit-answer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roundId: currentRound.id,
+          playerId: player.id,
+          roomId: room.id,
+          selectedOption: selectedOption ?? -1,
+          selectedText: isFreeText ? freeText.trim() : (question.options?.[selectedOption!]?.text || ''),
+          timeTakenMs: timeTaken,
+          screenSwitches: antiCheat.screenSwitches,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || '提交失败');
+      }
+
+      const answer = json.answer;
       setMyAnswer(answer);
 
       // 本地更新玩家积分（乐观更新）
@@ -433,7 +444,15 @@ export default function GamePage() {
   const handleBuzzIn = async () => {
     if (!currentRound || !player || buzzedIn) return;
     try {
-      await buzzIn(currentRound.id, player.id);
+      const res = await fetch('/api/buzz-in', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roundId: currentRound.id, playerId: player.id }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || '抢答失败');
+      }
       setBuzzedIn(player.id);
       await broadcast({
         type: 'buzz_in',
