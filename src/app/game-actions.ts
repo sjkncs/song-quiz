@@ -413,22 +413,31 @@ async function aiJudgeAnswer(
   // 统一的回退匹配函数（LLM 不可用时使用）
   const fallbackMatch = (): boolean => {
     const normalize = (s: string) =>
-      s.toLowerCase().replace(/[\s《》""''、，。,.!?！？：:;；\-\(\)（）\[\]【】]/g, '');
+      s.toLowerCase().replace(/[\s《》""''、，。,.!?！？：:;；\-\(\)（）\[\]【】·]/g, '');
     const player = normalize(playerAnswer);
 
     // 从正确答案中提取关键词：
+    // 0. 去掉字母选项前缀 (如 "B.热带雨林" → "热带雨林")
+    const ansBody = correctAnswer.replace(/^[A-D][.．、\s]+/i, '');
+
     // 1. 提取所有《...》中的内容作为关键词
-    const bracketMatches = [...correctAnswer.matchAll(/《([^》]+)》/g)].map(m => normalize(m[1]));
+    const bracketMatches = [...ansBody.matchAll(/《([^》]+)》/g)].map(m => normalize(m[1]));
     // 2. 按 / 或 | 拆分后的内容也作为关键词
-    const slashKeywords = correctAnswer.split(/[\/|]/).map(k => normalize(k.replace(/[《》]/g, ''))).filter(Boolean);
-    // 3. 合并去重
-    const allKeywords = [...new Set([...bracketMatches, ...slashKeywords])].filter(Boolean);
+    const slashKeywords = ansBody.split(/[\/|]/).map(k => normalize(k.replace(/[《》]/g, ''))).filter(Boolean);
+    // 3. 字母选项本身也是有效答案 (如选"B")
+    const letterMatch = correctAnswer.match(/^([A-D])/i);
+    const letterKeywords = letterMatch ? [letterMatch[1].toLowerCase()] : [];
+    // 4. 合并去重
+    const allKeywords = [...new Set([...bracketMatches, ...slashKeywords, ...letterKeywords])].filter(Boolean);
 
-    // 如果没有提取到关键词，用整个正确答案
-    const effectiveKeywords = allKeywords.length > 0 ? allKeywords : [normalize(correctAnswer)];
+    // 如果没有提取到关键词，用去掉前缀后的答案
+    const effectiveKeywords = allKeywords.length > 0 ? allKeywords : [normalize(ansBody)];
 
-    // 玩家答案中包含任一关键词即判对
-    return effectiveKeywords.some(k => k.length >= 2 && player.includes(k));
+    // 玩家答案中包含任一关键词即判对（关键词长度>=2避免单字误匹配，字母选项除外）
+    return effectiveKeywords.some(k => {
+      if (k.length === 1 && /^[a-d]$/.test(k)) return player === k; // 字母精确匹配
+      return k.length >= 2 && player.includes(k);
+    });
   };
 
   const llmKey = process.env.LLM_API_KEY;
