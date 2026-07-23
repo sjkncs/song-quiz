@@ -216,6 +216,7 @@ export default function GamePage() {
           setStreakMsg('');
           setWarningMsg('');
           antiCheat.reset();
+          answerTimer.start(); // 保底启动，防止timer_start广播丢失
           if (msg.payload.round) {
             const roundData = msg.payload.round as GameRound & { question?: GameQuestion };
             currentRoundNumRef.current = roundData.round_number;
@@ -324,6 +325,9 @@ export default function GamePage() {
           setStreakMsg('');
           setWarningMsg('');
           antiCheat.reset();
+          // Fallback: start answer timer immediately to prevent integer overflow
+          // if timer_start broadcast is missed. The host's timer_start will re-start it.
+          answerTimer.start();
         }
       }
 
@@ -374,7 +378,10 @@ export default function GamePage() {
     if (!isFreeText && selectedOption === null) return;
 
     setHasSubmitted(true);
-    const timeTaken = answerTimer.getElapsed();
+    // Cap elapsed time to prevent PostgreSQL integer overflow (max ~2.1B)
+    // If timer was never started (e.g. timer_start broadcast missed), getElapsed() returns Date.now()
+    const rawTime = answerTimer.getElapsed();
+    const timeTaken = rawTime > 999999 ? 0 : rawTime;
 
     try {
       const res = await fetch('/api/submit-answer', {

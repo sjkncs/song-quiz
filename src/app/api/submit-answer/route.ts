@@ -86,6 +86,9 @@ export async function POST(req: NextRequest) {
     const hasYellowCard = (screenSwitches || 0) >= 2;
     const pointsEarned = isCorrect ? 100 : 0;
 
+    // Safety cap: PostgreSQL integer max is ~2.1B, cap at 999999ms (~16 min)
+    const safeTimeMs = (timeTakenMs && timeTakenMs > 0 && timeTakenMs < 1000000) ? timeTakenMs : 0;
+
     const insertPayload = {
       round_id: roundId,
       player_id: playerId,
@@ -93,7 +96,7 @@ export async function POST(req: NextRequest) {
       selected_option: selectedOption ?? -1,
       selected_text: selectedText || '',
       is_correct: isCorrect,
-      time_taken_ms: timeTakenMs || 0,
+      time_taken_ms: safeTimeMs,
       points_earned: pointsEarned,
       screen_switches: screenSwitches || 0,
       has_yellow_card: hasYellowCard,
