@@ -895,6 +895,7 @@ export default function GamePage() {
         <div className="text-center text-sm text-[var(--text-secondary)] mt-8">
           等待下一题...
         </div>
+        <GameAssistant roomId={room?.id} playerId={player?.id} mode="player" />
       </main>
     );
   }
@@ -1037,6 +1038,7 @@ export default function GamePage() {
         <button onClick={() => router.push('/')} className="btn-secondary w-full">
           返回首页
         </button>
+        <GameAssistant roomId={room?.id} playerId={player?.id} mode="player" />
       </main>
     );
   }

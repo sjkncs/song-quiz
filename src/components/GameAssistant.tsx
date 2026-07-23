@@ -14,14 +14,32 @@ interface GameAssistantProps {
   mode?: 'player' | 'admin';
 }
 
+const PLAYER_QUICK = [
+  '我排第几？',
+  '我的正确率',
+  'A组B组对比',
+  '游戏规则',
+  '给我提示',
+  'Top5是谁？',
+];
+
+const ADMIN_QUICK = [
+  '当前进度',
+  'A组B组对比',
+  'Top5',
+  '切屏异常',
+  '正确率分析',
+  '节奏建议',
+];
+
 export default function GameAssistant({ roomId, playerId, mode = 'player' }: GameAssistantProps) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
       content: mode === 'admin'
-        ? '管理助手就绪。可以问我游戏进度、玩家状态、数据分析等问题。'
-        : '你好！我是派对助手，你的游戏助手。有任何问题都可以问我。',
+        ? '管理小Q就绪。问我进度、分组对比、Top5、切屏异常、正确率或节奏建议。'
+        : '嗨！我是派对小Q。问我排名、分数、分组、提示、规则都可以。',
       timestamp: Date.now(),
     },
   ]);
@@ -30,25 +48,23 @@ export default function GameAssistant({ roomId, playerId, mode = 'player' }: Gam
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // 自动滚到底部
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
 
-  // 打开时聚焦输入框
   useEffect(() => {
     if (open && inputRef.current) {
       inputRef.current.focus();
     }
   }, [open]);
 
-  const sendMessage = useCallback(async () => {
-    const text = input.trim();
-    if (!text || loading) return;
+  const sendMessage = useCallback(async (text?: string) => {
+    const msg = (text || input).trim();
+    if (!msg || loading) return;
 
-    const userMsg: Message = { role: 'user', content: text, timestamp: Date.now() };
+    const userMsg: Message = { role: 'user', content: msg, timestamp: Date.now() };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setLoading(true);
@@ -93,17 +109,14 @@ export default function GameAssistant({ roomId, playerId, mode = 'player' }: Gam
     }
   };
 
-  // 快捷问题
-  const quickQuestions = mode === 'player'
-    ? ['游戏规则是什么？', '给我一点提示', '我目前排第几？']
-    : ['当前游戏进度', '切屏异常报告', 'A组B组对比'];
+  const quickList = mode === 'player' ? PLAYER_QUICK : ADMIN_QUICK;
 
   return (
     <>
       {/* 悬浮按钮 */}
       <button
         onClick={() => setOpen(!open)}
-        className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all"
+        className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all active:scale-95"
         style={{
           background: open
             ? 'rgba(30,41,59,0.9)'
@@ -124,7 +137,7 @@ export default function GameAssistant({ roomId, playerId, mode = 'player' }: Gam
       {/* 聊天面板 */}
       {open && (
         <div
-          className="fixed bottom-24 right-4 z-50 w-[340px] max-h-[70vh] flex flex-col rounded-2xl shadow-2xl border border-[rgba(148,163,184,0.15)] overflow-hidden"
+          className="fixed bottom-24 right-4 z-50 w-[340px] max-h-[75vh] flex flex-col rounded-2xl shadow-2xl border border-[rgba(148,163,184,0.15)] overflow-hidden"
           style={{
             background: 'rgba(15, 23, 42, 0.95)',
             backdropFilter: 'blur(20px)',
@@ -139,18 +152,20 @@ export default function GameAssistant({ roomId, playerId, mode = 'player' }: Gam
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold">
-                {mode === 'admin' ? '管理助手' : '派对助手'}
+                {mode === 'admin' ? '管理小Q' : '派对小Q'}
               </p>
-              <p className="text-xs text-[#94a3b8]">AI游戏助手</p>
+              <p className="text-xs text-[#94a3b8]">
+                {mode === 'admin' ? '数据分析 · 节奏建议' : '排名 · 规则 · 提示'}
+              </p>
             </div>
-            <span className="w-2 h-2 rounded-full bg-green-400"></span>
+            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
           </div>
 
           {/* 消息区 */}
           <div
             ref={scrollRef}
             className="flex-1 overflow-y-auto px-4 py-3 space-y-3"
-            style={{ maxHeight: '45vh' }}
+            style={{ maxHeight: '48vh' }}
           >
             {messages.map((msg, i) => (
               <div
@@ -158,7 +173,7 @@ export default function GameAssistant({ roomId, playerId, mode = 'player' }: Gam
                 className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
+                  className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
                     msg.role === 'user'
                       ? 'bg-blue-600 text-white rounded-br-sm'
                       : 'bg-[rgba(30,41,59,0.8)] text-[#e2e8f0] rounded-bl-sm border border-[rgba(148,163,184,0.1)]'
@@ -181,20 +196,18 @@ export default function GameAssistant({ roomId, playerId, mode = 'player' }: Gam
             )}
           </div>
 
-          {/* 快捷问题 */}
-          {messages.length <= 2 && (
-            <div className="px-4 pb-2 flex flex-wrap gap-1.5">
-              {quickQuestions.map((q, i) => (
-                <button
-                  key={i}
-                  onClick={() => { setInput(q); }}
-                  className="text-xs px-2.5 py-1.5 rounded-full bg-[rgba(59,130,246,0.1)] text-blue-400 border border-[rgba(59,130,246,0.2)] hover:bg-[rgba(59,130,246,0.2)] transition-colors"
-                >
-                  {q}
-                </button>
-              ))}
-            </div>
-          )}
+          {/* 快捷问题 - 始终显示 */}
+          <div className="px-4 pb-2 flex flex-wrap gap-1.5">
+            {quickList.map((q, i) => (
+              <button
+                key={i}
+                onClick={() => sendMessage(q)}
+                className="text-xs px-2.5 py-1.5 rounded-full bg-[rgba(59,130,246,0.1)] text-blue-400 border border-[rgba(59,130,246,0.2)] hover:bg-[rgba(59,130,246,0.2)] transition-colors active:scale-95"
+              >
+                {q}
+              </button>
+            ))}
+          </div>
 
           {/* 输入区 */}
           <div className="px-3 py-2.5 border-t border-[rgba(148,163,184,0.1)]">
@@ -205,13 +218,13 @@ export default function GameAssistant({ roomId, playerId, mode = 'player' }: Gam
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={mode === 'admin' ? '问管理助手...' : '问派对助手...'}
+                placeholder={mode === 'admin' ? '问管理小Q...' : '问派对小Q...'}
                 className="flex-1 bg-[rgba(30,41,59,0.6)] border border-[rgba(148,163,184,0.15)] rounded-xl px-3 py-2 text-sm text-[#e2e8f0] outline-none focus:border-blue-500 placeholder:text-[#64748b]"
               />
               <button
-                onClick={sendMessage}
+                onClick={() => sendMessage()}
                 disabled={!input.trim() || loading}
-                className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center flex-shrink-0 disabled:opacity-40 transition-opacity"
+                className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center flex-shrink-0 disabled:opacity-40 transition-opacity active:scale-95"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                   <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>

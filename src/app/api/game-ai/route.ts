@@ -1,7 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 
-// 使用 service role 绕过 RLS
 function getAdminClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -9,45 +8,30 @@ function getAdminClient() {
   );
 }
 
-// ============================================================
-// AI 游戏助手 API
-// 功能：实时答疑 / 游戏状态查询 / 智能鼓励 / 管理分析
-// ============================================================
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const {
-      messages,
-      room_id,
-      player_id,
-      game_context,
-      mode = 'player', // 'player' | 'admin'
-    } = body;
+    const { messages, room_id, player_id, mode = 'player' } = body;
 
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: '缺少消息' }, { status: 400 });
     }
 
-    // 构建游戏上下文
     const context = await buildGameContext(room_id, player_id, mode);
-
-    // 系统提示词
     const systemPrompt = mode === 'admin'
       ? getAdminSystemPrompt(context)
       : getPlayerSystemPrompt(context);
 
-    // 调用 LLM
     const llmKey = process.env.LLM_API_KEY;
     const llmBaseRaw = process.env.LLM_BASE_URL || 'https://api.deepseek.com';
     const llmModel = process.env.LLM_MODEL || 'deepseek-chat';
 
     if (!llmKey) {
-      const fallback = generateFallbackReply(messages[messages.length - 1]?.content || '', context, mode);
-      return NextResponse.json({ reply: fallback });
+      return NextResponse.json({
+        reply: generateFallbackReply(messages[messages.length - 1]?.content || '', context, mode)
+      });
     }
 
-    // 规范化 base URL，避免 /v1/v1 重复
     const llmBase = llmBaseRaw.replace(/\/+v1\/?$/, '');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
@@ -75,8 +59,9 @@ export async function POST(req: NextRequest) {
 
       if (!response.ok) {
         console.warn('LLM API error:', response.status);
-        const fallback = generateFallbackReply(messages[messages.length - 1]?.content || '', context, mode);
-        return NextResponse.json({ reply: fallback });
+        return NextResponse.json({
+          reply: generateFallbackReply(messages[messages.length - 1]?.content || '', context, mode)
+        });
       }
 
       const data = await response.json();
@@ -84,15 +69,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ reply });
     } catch (fetchErr) {
       clearTimeout(timeout);
-      console.warn('LLM fetch failed, using fallback:', fetchErr instanceof Error ? fetchErr.message : fetchErr);
-      const fallback = generateFallbackReply(messages[messages.length - 1]?.content || '', context, mode);
-      return NextResponse.json({ reply: fallback });
+      console.warn('LLM fetch failed:', fetchErr instanceof Error ? fetchErr.message : fetchErr);
+      return NextResponse.json({
+        reply: generateFallbackReply(messages[messages.length - 1]?.content || '', context, mode)
+      });
     }
   } catch (error) {
     console.error('Game AI error:', error);
-    return NextResponse.json({
-      reply: 'AI助手暂时离线，请稍后再试。'
-    }, { status: 200 });
+    return NextResponse.json({ reply: 'AI助手暂时离线，请稍后再试。' }, { status: 200 });
   }
 }
 
@@ -102,65 +86,74 @@ export async function POST(req: NextRequest) {
 
 async function buildGameContext(roomId: string, playerId: string, mode: string) {
   const supabase = getAdminClient();
-  const ctx: Record<string, unknown> = { mode };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ctx: Record<string, any> = { mode };
 
   if (!roomId) return ctx;
 
-  // 房间信息
   const { data: room } = await supabase
-    .from('game_rooms')
-    .select('*')
-    .eq('id', roomId)
-    .single();
+    .from('game_rooms').select('*').eq('id', roomId).single();
   ctx.room = room;
 
-  // 玩家列表
   const { data: players } = await supabase
-    .from('game_players')
-    .select('*')
-    .eq('room_id', roomId)
-    .order('score', { ascending: false });
-  ctx.players = players;
+    .from('game_players').select('*').eq('room_id', roomId).order('score', { ascending: false });
+  ctx.players = players || [];
   ctx.total_players = players?.length || 0;
 
-  // 分组统计
   const groupA = players?.filter(p => p.group_label === 'A') || [];
   const groupB = players?.filter(p => p.group_label === 'B') || [];
-  ctx.group_a = { count: groupA.length, total_score: groupA.reduce((s, p) => s + p.score, 0) };
-  ctx.group_b = { count: groupB.length, total_score: groupB.reduce((s, p) => s + p.score, 0) };
+  ctx.group_a = { count: groupA.length, total_score: groupA.reduce((s, p) => s + p.score, 0), players: groupA };
+  ctx.group_b = { count: groupB.length, total_score: groupB.reduce((s, p) => s + p.score, 0), players: groupB };
 
-  // 当前回合
+  // 全局排名
+  const allSorted = [...(players || [])].sort((a, b) => b.score - a.score);
+  ctx.top5 = allSorted.slice(0, 5).map((p, i) => `${i + 1}. ${p.nickname}(${p.group_label}组) ${p.score}分`);
+
   if (room?.current_round > 0) {
     const { data: round } = await supabase
-      .from('game_rounds')
-      .select('*, question:game_questions(*)')
-      .eq('room_id', roomId)
-      .eq('round_number', room.current_round)
-      .single();
+      .from('game_rounds').select('*, question:game_questions(*)')
+      .eq('room_id', roomId).eq('round_number', room.current_round).single();
     ctx.current_round = round;
 
-    // 本题答题情况
     if (round) {
       const { data: answers } = await supabase
-        .from('game_answers')
-        .select('*, player:game_players(nickname, group_label)')
+        .from('game_answers').select('*, player:game_players(nickname, group_label)')
         .eq('round_id', round.id);
-      ctx.round_answers = answers;
+      ctx.round_answers = answers || [];
       ctx.answered_count = answers?.length || 0;
+
+      // 本题统计
+      const correct = (answers || []).filter(a => a.is_correct).length;
+      ctx.round_correct = correct;
+      ctx.round_accuracy = ctx.answered_count > 0 ? Math.round(correct / ctx.answered_count * 100) : 0;
     }
   }
 
-  // 当前玩家信息
+  // 历史答题统计（admin用）
+  if (mode === 'admin' && players && players.length > 0) {
+    const totalCorrect = players.reduce((s, p) => s + p.correct_count, 0);
+    const totalWrong = players.reduce((s, p) => s + p.wrong_count, 0);
+    const totalAnswered = totalCorrect + totalWrong;
+    ctx.overall_accuracy = totalAnswered > 0 ? Math.round(totalCorrect / totalAnswered * 100) : 0;
+    ctx.total_correct = totalCorrect;
+    ctx.total_wrong = totalWrong;
+  }
+
   if (playerId) {
     const player = players?.find(p => p.id === playerId);
     ctx.my_player = player;
-    // 计算排名
     if (player) {
       const myGroup = players?.filter(p => p.group_label === player.group_label) || [];
       const sorted = [...myGroup].sort((a, b) => b.score - a.score);
-      const myRank = sorted.findIndex(p => p.id === playerId) + 1;
-      ctx.my_rank = myRank;
+      ctx.my_rank = sorted.findIndex(p => p.id === playerId) + 1;
       ctx.my_group_size = myGroup.length;
+
+      // 全局排名
+      ctx.my_global_rank = allSorted.findIndex(p => p.id === playerId) + 1;
+
+      // 个人统计
+      const myTotal = player.correct_count + player.wrong_count;
+      ctx.my_accuracy = myTotal > 0 ? Math.round(player.correct_count / myTotal * 100) : 0;
     }
   }
 
@@ -171,99 +164,194 @@ async function buildGameContext(roomId: string, playerId: string, mode: string) 
 // 系统提示词
 // ============================================================
 
-function getPlayerSystemPrompt(ctx: Record<string, unknown>): string {
-  const room = ctx.room as Record<string, unknown> | undefined;
-  const myPlayer = ctx.my_player as Record<string, unknown> | undefined;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getPlayerSystemPrompt(ctx: Record<string, any>): string {
+  const room = ctx.room;
+  const my = ctx.my_player;
+  return `你是"脑力派对"游戏的AI助手"派对小Q"，活泼、有趣、 knowledgeable。
 
-  return `你是"脑力派对"游戏的AI助手，名叫"派对助手"。你的职责是帮助玩家享受游戏、解答疑问、提供鼓励。
-
-当前游戏状态：
-- 房间: ${room?.name || '音乐竞猜PK'}
-- 状态: ${room?.status === 'waiting' ? '等待中' : room?.status === 'playing' ? '进行中' : room?.status === 'finished' ? '已结束' : '准备中'}
-- 当前第${room?.current_round || 0}题（共${(room?.config as Record<string, unknown>)?.total_questions || 40}题）
-${myPlayer ? `- 玩家: ${myPlayer.nickname}，${myPlayer.group_label}组，积分${myPlayer.score}，答对${myPlayer.correct_count}题，连对${myPlayer.streak}题` : ''}
-${ctx.my_rank ? `- 你在组内排名第${ctx.my_rank}名（共${ctx.my_group_size}人）` : ''}
-- A组总分: ${(ctx.group_a as Record<string, unknown>)?.total_score || 0} | B组总分: ${(ctx.group_b as Record<string, unknown>)?.total_score || 0}
-
-你的角色规则：
-1. 用简短、活泼、友好的语气回复（适合手机屏幕阅读）
-2. 不直接告诉玩家答案，但可以给提示（如"这首歌是90年代的经典"）
-3. 当玩家连续答对时给予热情鼓励
-4. 当玩家答错时安慰并鼓励
-5. 回答游戏规则问题（积分规则、分组规则、反作弊规则等）
-6. 可以适当聊一些音乐/影视相关的话题
-7. 每次回复控制在2-3句话以内
-8. 不要使用emoji`;
-}
-
-function getAdminSystemPrompt(ctx: Record<string, unknown>): string {
-  const room = ctx.room as Record<string, unknown> | undefined;
-
-  return `你是"脑力派对"的管理AI助手，协助主持人管理游戏。
-
-当前游戏状态：
-- 房间: ${room?.name || '音乐竞猜PK'}
-- 状态: ${room?.status || '未知'}
+当前状态：
+- 房间: ${room?.name || '脑力派对'}，状态: ${room?.status === 'waiting' ? '等待中' : room?.status === 'playing' ? '进行中' : room?.status === 'finished' ? '已结束' : '准备中'}
 - 当前第${room?.current_round || 0}题
-- 玩家总数: ${ctx.total_players || 0}
-- A组: ${(ctx.group_a as Record<string, unknown>)?.count || 0}人，总分${(ctx.group_a as Record<string, unknown>)?.total_score || 0}
-- B组: ${(ctx.group_b as Record<string, unknown>)?.count || 0}人，总分${(ctx.group_b as Record<string, unknown>)?.total_score || 0}
-- 本题已答: ${ctx.answered_count || 0}/${ctx.total_players || 0}人
+${my ? `- 玩家: ${my.nickname}，${my.group_label}组，${my.score}分，答对${my.correct_count}题，答错${my.wrong_count}题，连对${my.streak}题，正确率${ctx.my_accuracy || 0}%` : ''}
+${ctx.my_rank ? `- 组内排名: 第${ctx.my_rank}名/${ctx.my_group_size}人，全局第${ctx.my_global_rank}名/${ctx.total_players}人` : ''}
+- A组${ctx.group_a?.count || 0}人${ctx.group_a?.total_score || 0}分 vs B组${ctx.group_b?.count || 0}人${ctx.group_b?.total_score || 0}分
 
-你可以：
-1. 提供实时数据分析（每题正确率、平均用时、切屏次数）
-2. 建议游戏节奏（"大部分人已作答，可以揭晓答案了"）
-3. 报告异常情况（"XX玩家切屏3次，建议关注"）
-4. 回答管理问题
-5. 用简洁专业的语气回复`;
+规则：
+1. 每题100分，答错不扣分
+2. 连续答对3题以上有激励消息
+3. 累计答错2次提示表演节目，3次提示自罚一杯
+4. 切屏超过2次黄牌警告，影响排名
+5. 排名规则: 正确率 > 用时 > 切屏次数 > 总分
+
+回复要求：简短(2-3句)、活泼、不用emoji、绝不透露答案、可适度开玩笑。`;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getAdminSystemPrompt(ctx: Record<string, any>): string {
+  const room = ctx.room;
+  return `你是"脑力派对"的管理助手"管理小Q"，专业、简洁、数据驱动。
+
+当前状态：
+- 第${room?.current_round || 0}题，${ctx.answered_count || 0}/${ctx.total_players || 0}人已答
+- A组${ctx.group_a?.count || 0}人 ${ctx.group_a?.total_score || 0}分 | B组${ctx.group_b?.count || 0}人 ${ctx.group_b?.total_score || 0}分
+- 本题正确率: ${ctx.round_accuracy || 0}% (${ctx.round_correct || 0}/${ctx.answered_count || 0})
+- 全局正确率: ${ctx.overall_accuracy || 0}% (${ctx.total_correct || 0}对/${ctx.total_wrong || 0}错)
+- Top5: ${(ctx.top5 || []).join(', ')}
+
+功能：实时数据分析、节奏建议、异常报告。回复简洁专业，2-3句以内。`;
 }
 
 // ============================================================
-// 预设回复（无LLM时的降级方案）
+// 智能降级回复（无LLM时使用实际游戏数据）
 // ============================================================
 
-function generateFallbackReply(
-  message: string,
-  ctx: Record<string, unknown>,
-  mode: string
-): string {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function generateFallbackReply(message: string, ctx: Record<string, any>, mode: string): string {
   const msg = message.toLowerCase();
+  const my = ctx.my_player;
+  const room = ctx.room;
 
-  // 规则类问题
-  if (msg.includes('规则') || msg.includes('怎么玩')) {
-    return '游戏规则很简单：听音频/看视频/读题目，选择或输入正确答案。每题100分，连续答对有额外激励。注意不要切屏到其他应用哦，会被记录的！';
-  }
-  if (msg.includes('积分') || msg.includes('分数') || msg.includes('加分')) {
-    return '每答对一题得100分，连续答对会有额外激励消息。所有题目积分相同，最终按总分排名。';
-  }
-  if (msg.includes('切屏') || msg.includes('黄牌')) {
-    return '答题时如果切换到其他应用会被记录切屏次数。切屏超过2次会收到黄牌警告，请注意保持在游戏页面哦。';
-  }
-  if (msg.includes('排名') || msg.includes('名次')) {
-    const myRank = ctx.my_rank;
-    const myGroup = ctx.my_group_size;
-    if (myRank) {
-      return `你目前在组内排第${myRank}名（共${myGroup}人）。继续加油，争取更高排名！`;
+  // ---- 玩家模式 ----
+  if (mode === 'player') {
+    // 排名/名次
+    if (msg.includes('排名') || msg.includes('名次') || msg.includes('第几') || msg.includes('排第')) {
+      if (ctx.my_rank) {
+        const diff = ctx.my_rank <= 3 ? '，名列前茅！' : ctx.my_rank <= ctx.my_group_size / 2 ? '，还不错，继续冲！' : '，加油，还有机会翻盘！';
+        return `你在${my?.group_label}组排第${ctx.my_rank}名（共${ctx.my_group_size}人），全局第${ctx.my_global_rank}名（共${ctx.total_players}人）${diff}`;
+      }
+      return '还没有答题记录，开始答题后就能看到排名了。';
     }
-    return '排名会在游戏结束后公布，按组内总分排序，前四名分别获得一、二、三、四等奖。';
-  }
-  if (msg.includes('提示') || msg.includes('hint') || msg.includes('帮我')) {
-    return '我没法直接告诉你答案哦，但可以提示你：仔细听音频的旋律特点，或者回忆题目描述的关键信息。相信自己！';
-  }
-  if (msg.includes('你好') || msg.includes('hi') || msg.includes('hello') || msg.includes('嗨')) {
-    return '你好！我是派对助手，你的游戏助手。有任何关于游戏的问题都可以问我哦。';
+
+    // 分数/积分
+    if (msg.includes('分') || msg.includes('积分') || msg.includes('多少分')) {
+      if (my) {
+        const acc = ctx.my_accuracy || 0;
+        return `你当前${my.score}分，答对${my.correct_count}题，答错${my.wrong_count}题，正确率${acc}%。每答对一题得100分。`;
+      }
+      return '还没有答题记录。';
+    }
+
+    // 规则
+    if (msg.includes('规则') || msg.includes('怎么玩') || msg.includes('介绍')) {
+      return '规则很简单：主持人播放题目后抢答，答对得100分。排名看正确率，再看用时。切屏会被记录，超过2次黄牌。答错2次要表演节目，3次自罚一杯。';
+    }
+
+    // 提示
+    if (msg.includes('提示') || msg.includes('hint') || msg.includes('帮我') || msg.includes('答案')) {
+      const streak = my?.streak || 0;
+      if (streak >= 3) return `你已经连对${streak}题了，手感火热！继续保持，答案就在你的直觉里。`;
+      if (my?.wrong_count >= 2) return `已经错了${my.wrong_count}次，别急，深呼吸，下一题稳着来。相信自己！`;
+      return '我没法给答案哦，但可以告诉你：仔细听旋律特征，回忆关键信息。相信自己的第一直觉！';
+    }
+
+    // 分组/A组B组
+    if (msg.includes('组') || msg.includes('a组') || msg.includes('b组') || msg.includes('分组')) {
+      const a = ctx.group_a, b = ctx.group_b;
+      const lead = a.total_score > b.total_score ? `A组领先${a.total_score - b.total_score}分` : b.total_score > a.total_score ? `B组领先${b.total_score - a.total_score}分` : '两组平分';
+      return `A组${a.count}人${a.total_score}分，B组${b.count}人${b.total_score}分，${lead}。你在${my?.group_label}组。`;
+    }
+
+    // 正确率
+    if (msg.includes('正确率') || msg.includes('准确率') || msg.includes('对了多少')) {
+      if (my) {
+        return `你的正确率${ctx.my_accuracy || 0}%，答对${my.correct_count}题，答错${my.wrong_count}题。`;
+      }
+      return '还没有答题数据。';
+    }
+
+    // 连对/连击
+    if (msg.includes('连对') || msg.includes('连击') || msg.includes('streak')) {
+      const s = my?.streak || 0;
+      const max = my?.max_streak || 0;
+      return s > 0 ? `当前连对${s}题，历史最长连对${max}题！` : `目前无连对记录，历史最长连对${max}题。`;
+    }
+
+    // 切屏
+    if (msg.includes('切屏') || msg.includes('黄牌') || msg.includes('作弊')) {
+      return '答题时切到其他应用会被记录。切屏2次以上黄牌警告，影响最终排名（正确率相同时切屏少的人排前面）。';
+    }
+
+    // 惩罚/表演/自罚
+    if (msg.includes('惩罚') || msg.includes('表演') || msg.includes('自罚') || msg.includes('罚')) {
+      const w = my?.wrong_count || 0;
+      if (w >= 3) return `你已经错了${w}次，按规则要"自罚一杯"了！别灰心，后面还有机会。`;
+      if (w >= 2) return `错了${w}次，再错一次就要"自罚一杯"了。稳住！`;
+      return `目前错了${w}次。错2次要表演节目，错3次要自罚一杯，加油避免！`;
+    }
+
+    // Top/前三/前五
+    if (msg.includes('top') || msg.includes('前三') || msg.includes('前五') || msg.includes('排行')) {
+      return `当前Top5：${ctx.top5?.join('、') || '暂无数据'}`;
+    }
+
+    // 还有几题/进度
+    if (msg.includes('几题') || msg.includes('进度') || msg.includes('还有多少')) {
+      return `当前第${room?.current_round || 0}题。`;
+    }
+
+    // 打招呼
+    if (msg.includes('你好') || msg.includes('hi') || msg.includes('hello') || msg.includes('嗨') || msg.includes('hey')) {
+      if (my) return `嗨${my.nickname}！你目前${my.score}分，${my.group_label}组第${ctx.my_rank}名。有什么我能帮你的？`;
+      return '你好！我是派对小Q，你的游戏助手。问我规则、排名、分组都可以。';
+    }
   }
 
-  // 管理模式的预设回复
+  // ---- Admin模式 ----
   if (mode === 'admin') {
-    if (msg.includes('状态') || msg.includes('进度')) {
-      return `当前游戏第${ctx.room ? (ctx.room as Record<string, unknown>).current_round : 0}题，A组总分${(ctx.group_a as Record<string, unknown>)?.total_score || 0}，B组总分${(ctx.group_b as Record<string, unknown>)?.total_score || 0}，共${ctx.total_players || 0}名玩家参与。`;
+    // 进度
+    if (msg.includes('进度') || msg.includes('状态') || msg.includes('第几题')) {
+      return `当前第${room?.current_round || 0}题，${ctx.answered_count || 0}/${ctx.total_players}人已答，本题正确率${ctx.round_accuracy || 0}%。`;
     }
-    if (msg.includes('切屏') || msg.includes('作弊')) {
-      return '请在反作弊标签页查看详细的切屏检测记录和黄牌标记。';
+
+    // 分组对比
+    if (msg.includes('组') || msg.includes('对比') || msg.includes('a组') || msg.includes('b组')) {
+      const a = ctx.group_a, b = ctx.group_b;
+      const diff = Math.abs(a.total_score - b.total_score);
+      const leader = a.total_score > b.total_score ? 'A组领先' : b.total_score > a.total_score ? 'B组领先' : '平分';
+      return `A组${a.count}人${a.total_score}分 vs B组${b.count}人${b.total_score}分，${leader}${diff}分。全局正确率${ctx.overall_accuracy}%。`;
     }
-    return '我是管理助手，可以帮你分析游戏数据、监控玩家状态。试试问我"当前进度"或"A组B组对比"。';
+
+    // Top/排名
+    if (msg.includes('top') || msg.includes('排名') || msg.includes('排行') || msg.includes('前五')) {
+      return `Top5：${ctx.top5?.join('、') || '暂无数据'}`;
+    }
+
+    // 切屏/作弊
+    if (msg.includes('切屏') || msg.includes('作弊') || msg.includes('异常')) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cheaters = (ctx.players || []).filter((p: any) => p.screen_switches > 0).sort((a: any, b: any) => b.screen_switches - a.screen_switches);
+      if (cheaters.length === 0) return '暂无切屏异常记录。';
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const top3 = cheaters.slice(0, 3).map((p: any) => `${p.nickname}(${p.screen_switches}次)`);
+      return `切屏Top3：${top3.join('、')}。详见反作弊页签。`;
+    }
+
+    // 正确率
+    if (msg.includes('正确率') || msg.includes('难度')) {
+      return `全局正确率${ctx.overall_accuracy}%，共${ctx.total_correct}对${ctx.total_wrong}错。本题正确率${ctx.round_accuracy}%。`;
+    }
+
+    // 建议/节奏
+    if (msg.includes('建议') || msg.includes('节奏') || msg.includes('该') || msg.includes('可以')) {
+      const pct = ctx.total_players > 0 ? Math.round((ctx.answered_count / ctx.total_players) * 100) : 0;
+      if (pct >= 80) return `${pct}%玩家已答，建议揭晓答案。`;
+      if (pct >= 50) return `${pct}%已答，可以再等一会或开始计时催促。`;
+      return `仅${pct}%已答，建议等待更多玩家作答。`;
+    }
+
+    // 人数
+    if (msg.includes('人数') || msg.includes('多少人') || msg.includes('几个')) {
+      return `共${ctx.total_players}名玩家，A组${ctx.group_a?.count}人，B组${ctx.group_b?.count}人。`;
+    }
   }
 
-  return '我是派对助手，你的游戏助手。你可以问我游戏规则、积分方式、排名情况，或者让我给你一些提示。加油！';
+  // 默认回复
+  if (mode === 'admin') {
+    return `管理小Q就绪。问我"进度"、"分组对比"、"Top5"、"切屏异常"、"正确率"或"建议"。`;
+  }
+  if (my) {
+    return `${my.nickname}，你目前${my.score}分，${my.group_label}组第${ctx.my_rank}名。问我规则、排名、分组、提示都行。`;
+  }
+  return '我是派对小Q，问我游戏规则、排名、分组、提示都可以。加油！';
 }
