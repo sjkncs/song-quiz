@@ -627,6 +627,25 @@ export async function submitAnswer(
   timeTakenMs: number,
   screenSwitches: number
 ) {
+  try {
+    return await _submitAnswerInner(roundId, playerId, roomId, selectedOption, selectedText, timeTakenMs, screenSwitches);
+  } catch (e: unknown) {
+    // Catch ALL errors here to prevent Next.js Server Component render errors.
+    // Re-throw as a clean Error that the client catch block can handle.
+    const msg = e instanceof Error ? e.message : '提交答案时发生未知错误';
+    throw new Error(msg);
+  }
+}
+
+async function _submitAnswerInner(
+  roundId: string,
+  playerId: string,
+  roomId: string,
+  selectedOption: number,
+  selectedText: string,
+  timeTakenMs: number,
+  screenSwitches: number
+) {
   const supabase = await createAdminClient();
 
   // 获取题目信息 + 抢答状态
@@ -725,7 +744,7 @@ export async function submitAnswer(
     p_new_streak: newStreak,
   });
 
-  return data as GameAnswer;
+  return JSON.parse(JSON.stringify(data)) as GameAnswer;
 }
 
 export async function getRoundAnswers(roundId: string) {
