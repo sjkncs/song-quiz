@@ -661,14 +661,20 @@ export default function AdminRoomPage() {
                         is_correct: boolean;
                         submitted_at: string;
                         player?: { nickname: string; group_label?: string };
-                      }>).map((a, i) => (
+                      }>).map((a, i) => {
+                        const isBuzzer = currentRound?.buzzed_in_player_id === a.player_id;
+                        return (
                         <div key={i} className={`flex items-center gap-2 py-1.5 px-3 rounded-lg text-sm ${
+                          isBuzzer ? 'bg-orange-500/10 border border-orange-500/30' :
                           a.has_yellow_card ? 'bg-yellow-500/10 border border-yellow-500/20' : 'bg-[rgba(15,23,42,0.4)]'
                         }`}>
                           <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
                             a.player?.group_label === 'A' ? 'bg-blue-500/20 text-blue-400' : 'bg-yellow-500/20 text-yellow-400'
                           }`}>{a.player?.group_label || '?'}</span>
-                          <span className="flex-shrink-0 text-xs font-medium w-16 truncate">{a.player?.nickname || '未知'}</span>
+                          <span className="flex-shrink-0 text-xs font-medium w-16 truncate">
+                            {a.player?.nickname || '未知'}
+                            {isBuzzer && <span className="ml-1 text-orange-400">⚡</span>}
+                          </span>
                           <span className="flex-1 min-w-0 text-xs text-[var(--text-secondary)] truncate" title={a.selected_text || ''}>
                             {a.selected_text || (a.selected_option !== null && a.selected_option >= 0 ? `选项${String.fromCharCode(65 + a.selected_option)}` : '未作答')}
                           </span>
@@ -684,7 +690,8 @@ export default function AdminRoomPage() {
                             {a.is_correct ? '✓' : '✗'}
                           </span>
                         </div>
-                      ))}
+                      );
+                      })}
                     </div>
                   </div>
                 )}
@@ -710,6 +717,21 @@ export default function AdminRoomPage() {
                 <p className="text-xs text-[var(--text-secondary)]">B组人数</p>
               </div>
             </div>
+
+            {/* 彩蛋奖励（控制页实时展示） */}
+            {bonusWinners.length > 0 && (
+              <div className="glass-card p-4 border border-yellow-500/30 bg-yellow-500/5">
+                <h3 className="font-bold text-yellow-400 mb-2 text-sm">🎁 彩蛋奖励获得者</h3>
+                <div className="flex flex-wrap gap-2">
+                  {bonusWinners.map((w, i) => (
+                    <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs bg-yellow-500/15 text-yellow-300 border border-yellow-500/20">
+                      <span className="font-medium">{w.nickname}</span>
+                      <span className="text-yellow-400/70">— {w.bonus_message}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
