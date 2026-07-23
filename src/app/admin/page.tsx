@@ -13,7 +13,6 @@ export default function AdminPage() {
   const [customCode, setCustomCode] = useState('');
   const [error, setError] = useState('');
   const [allRooms, setAllRooms] = useState<(GameRoom & { player_count: { count: number }[] })[]>([]);
-  const [showRoomList, setShowRoomList] = useState(false);
 
   const loadRooms = async () => {
     try {
@@ -51,6 +50,8 @@ export default function AdminPage() {
       } catch {
         // 房间不存在，忽略
       }
+      // 加载所有房间列表
+      loadRooms();
       setLoading(false);
     })();
   }, [router]);
@@ -154,50 +155,61 @@ export default function AdminPage() {
         </button>
 
         {/* 房间管理 */}
-        <div className="mt-8">
-          <button
-            onClick={() => { setShowRoomList(!showRoomList); if (!showRoomList) loadRooms(); }}
-            className="text-sm text-[var(--text-secondary)] hover:text-white transition-colors"
-          >
-            {showRoomList ? '隐藏' : '管理'}所有房间 ({allRooms.length > 0 ? allRooms.length : '...'})
-          </button>
-
-          {showRoomList && (
-            <div className="mt-4 space-y-2 max-h-64 overflow-y-auto">
-              {allRooms.map((r) => (
-                <div key={r.id} className={`flex items-center gap-3 py-2 px-3 rounded-lg ${r.id === room.id ? 'bg-blue-500/10 border border-blue-500/20' : 'bg-[rgba(15,23,42,0.4)]'}`}>
-                  <span className="flex-1 min-w-0">
-                    <span className="font-mono text-sm font-bold">{r.room_code}</span>
-                    <span className="text-xs text-[var(--text-secondary)] ml-2">
+        <div className="mt-8 w-full max-w-md">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-medium text-[var(--text-secondary)]">我的房间</h3>
+            <button
+              onClick={() => loadRooms()}
+              className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+            >
+              刷新
+            </button>
+          </div>
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {allRooms.length === 0 && (
+              <p className="text-sm text-[var(--text-secondary)] text-center py-4">暂无房间</p>
+            )}
+            {allRooms.map((r) => (
+              <div
+                key={r.id}
+                onClick={() => r.id !== room.id && router.push(`/admin/room/${r.id}`)}
+                className={`flex items-center gap-3 py-3 px-4 rounded-xl cursor-pointer transition-all hover:bg-blue-500/10 ${
+                  r.id === room.id ? 'bg-blue-500/15 border border-blue-500/30' : 'bg-[rgba(15,23,42,0.5)] border border-[var(--glass-border)]'
+                }`}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold truncate">{r.name || '未命名房间'}</span>
+                    {r.id === room.id && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] bg-blue-500/20 text-blue-400 font-bold">当前</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="font-mono text-xs text-[var(--text-secondary)]">{r.room_code}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                      r.status === 'waiting' ? 'bg-yellow-500/15 text-yellow-400' :
+                      r.status === 'playing' ? 'bg-green-500/15 text-green-400' :
+                      r.status === 'finished' ? 'bg-gray-500/15 text-gray-400' : 'bg-blue-500/15 text-blue-400'
+                    }`}>
                       {r.status === 'waiting' ? '等待中' : r.status === 'playing' ? '进行中' : r.status === 'finished' ? '已结束' : '准备中'}
                     </span>
-                    <span className="text-xs text-[var(--text-secondary)] ml-2">
-                      {r.player_count?.[0]?.count || 0}人
-                    </span>
-                  </span>
-                  {r.status === 'finished' && (
-                    <button
-                      onClick={() => handleDeleteRoom(r.id, r.room_code)}
-                      className="text-xs px-2 py-1 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30"
-                    >
-                      删除
-                    </button>
-                  )}
-                  {r.status !== 'finished' && r.id !== room.id && (
-                    <button
-                      onClick={() => router.push(`/admin/room/${r.id}`)}
-                      className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
-                    >
-                      进入
-                    </button>
-                  )}
-                  {r.id === room.id && (
-                    <span className="text-xs text-blue-400">当前</span>
-                  )}
+                    <span className="text-[10px] text-[var(--text-secondary)]">{r.player_count?.[0]?.count || 0}人</span>
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
+                {r.status === 'finished' && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDeleteRoom(r.id, r.room_code); }}
+                    className="text-xs px-2 py-1 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                  >
+                    删除
+                  </button>
+                )}
+                {r.status !== 'finished' && r.id !== room.id && (
+                  <span className="text-xs text-blue-400">进入 →</span>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       </main>
     );

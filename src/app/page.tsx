@@ -12,45 +12,61 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
-  const [lastRoom, setLastRoom] = useState<{ code: string; isAdmin: boolean; realName: string; nickname: string } | null>(null);
+  const [roomHistory, setRoomHistory] = useState<{ code: string; name?: string; isAdmin: boolean; realName: string; nickname: string; joinedAt: string }[]>([]);
 
-  // 检查是否有上次房间记录（用于快速重连）
+  // 检查已加入的房间历史（用于快速重连）
   useEffect(() => {
-    const saved = localStorage.getItem('last_room');
+    const saved = localStorage.getItem('room_history');
     if (saved) {
-      try { setLastRoom(JSON.parse(saved)); } catch {}
+      try { setRoomHistory(JSON.parse(saved)); } catch {}
+    }
+    // 兼容旧版 last_room 数据
+    const legacy = localStorage.getItem('last_room');
+    if (legacy && !saved) {
+      try {
+        const old = JSON.parse(legacy);
+        const migrated = [{ ...old, joinedAt: new Date().toISOString() }];
+        setRoomHistory(migrated);
+        localStorage.setItem('room_history', JSON.stringify(migrated));
+      } catch {}
     }
   }, []);
 
   const storeUserInfo = () => {
     sessionStorage.setItem('real_name', realName.trim());
     sessionStorage.setItem('nickname', nickname.trim());
-    // 同时保存到 localStorage 以便重连
-    localStorage.setItem('last_room', JSON.stringify({
+    // 追加到房间历史（去重，保留最新的）
+    const entry = {
       code: roomCode.trim().toUpperCase(),
       isAdmin,
       realName: realName.trim(),
       nickname: nickname.trim(),
-    }));
+      joinedAt: new Date().toISOString(),
+    };
+    setRoomHistory(prev => {
+      const filtered = prev.filter(r => r.code !== entry.code);
+      const updated = [entry, ...filtered].slice(0, 10); // 最多保存10个
+      localStorage.setItem('room_history', JSON.stringify(updated));
+      return updated;
+    });
   };
 
-  // 快速返回上次的房间
-  const handleReconnect = async () => {
-    if (!lastRoom) return;
+  // 快速返回指定房间
+  const handleReconnect = async (roomEntry: typeof roomHistory[0]) => {
     setLoading(true);
     try {
       const user = await getCurrentUser();
       if (!user) {
-        await signInAnonymously(lastRoom.nickname);
+        await signInAnonymously(roomEntry.nickname);
       }
-      sessionStorage.setItem('real_name', lastRoom.realName);
-      sessionStorage.setItem('nickname', lastRoom.nickname);
-      if (lastRoom.isAdmin) {
+      sessionStorage.setItem('real_name', roomEntry.realName);
+      sessionStorage.setItem('nickname', roomEntry.nickname);
+      if (roomEntry.isAdmin) {
         sessionStorage.setItem('is_admin', 'true');
-        sessionStorage.setItem('room_code', lastRoom.code);
+        sessionStorage.setItem('room_code', roomEntry.code);
         router.push('/admin');
       } else {
-        router.push(`/game/${lastRoom.code}`);
+        router.push(`/game/${roomEntry.code}`);
       }
     } catch {
       setError('重连失败，请重新登录');
@@ -112,22 +128,35 @@ export default function HomePage() {
         </p>
       </div>
 
-      {/* 快速重连卡片 */}
-      {lastRoom && (
-        <div className="glass-card w-full max-w-sm p-4 mb-4 animate-slideUp">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs text-[var(--text-secondary)]">上次的房间</p>
-              <p className="font-mono text-lg text-blue-400 tracking-widest">{lastRoom.code}</p>
-              <p className="text-xs text-[var(--text-secondary)]">{lastRoom.isAdmin ? '主持人' : '玩家'} · {lastRoom.nickname}</p>
-            </div>
-            <button
-              onClick={handleReconnect}
-              disabled={loading}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white text-sm font-medium shadow-md disabled:opacity-50"
-            >
-              快速返回
-            </button>
+      {/* 已加入的房间列表 */}
+      {roomHistory.length > 0 && (
+        <div className="w-full max-w-sm mb-4 animate-slideUp">
+          <p className="text-xs text-[var(--text-secondary)] mb-2 px-1">我的房间</p>
+          <div className="space-y-2 max-h-48 overflow-y-auto">
+            {roomHistory.map((r, i) => (
+              <div
+                key={r.code + i}
+                className="glass-card p-3 flex items-center gap-3 cursor-pointer hover:border-blue-500/30 transition-all"
+                onClick={() => handleReconnect(r)}
+              >
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                  r.isAdmin ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'
+                }`}>
+                  {r.isAdmin ? (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-mono text-sm text-blue-400 tracking-widest">{r.code}</p>
+                  <p className="text-[10px] text-[var(--text-secondary)]">
+                    {r.isAdmin ? '主持人' : '玩家'} · {r.nickname}
+                  </p>
+                </div>
+                <span className="text-xs text-blue-400 flex-shrink-0">进入 →</span>
+              </div>
+            ))}
           </div>
         </div>
       )}
