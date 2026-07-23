@@ -102,6 +102,7 @@ export default function GamePage() {
   const [buzzedIn, setBuzzedIn] = useState<string | null>(null); // player_id who buzzed in
   const [timerStarted, setTimerStarted] = useState(false); // host-controlled timer start
   const currentRoundNumRef = useRef(0); // track latest round number to filter stale DB updates
+  const currentRoundIdRef = useRef<string>(''); // track current round ID for precise stale event filtering
 
   // 反作弊
   const antiCheat = useAntiCheat();
@@ -155,6 +156,8 @@ export default function GamePage() {
           if (round) {
             setCurrentRound(round);
             currentRoundNumRef.current = round.round_number;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            currentRoundIdRef.current = (round as any).id || '';
 
             // 恢复抢答状态
             if (round.buzzed_in_player_id) {
@@ -210,6 +213,8 @@ export default function GamePage() {
           if (msg.payload.round) {
             const roundData = msg.payload.round as GameRound & { question?: GameQuestion };
             currentRoundNumRef.current = roundData.round_number;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            currentRoundIdRef.current = (roundData as any).id || '';
             setCurrentRound(roundData);
           }
           break;
@@ -218,6 +223,12 @@ export default function GamePage() {
           answerTimer.start();
           break;
         case 'round_reveal':
+          // Sync the round ID ref immediately so that any delayed DB 'revealed' events
+          // for THIS round are accepted, while stale events for OTHER rounds are rejected.
+          if (msg.payload.round_id && currentRound) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            currentRoundIdRef.current = msg.payload.round_id as string;
+          }
           setPhase('revealed');
           break;
         case 'media_unlock':
@@ -271,6 +282,8 @@ export default function GamePage() {
     onRoundUpdate: useCallback((round: GameRound & { question?: GameQuestion }) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const roundNum = (round as any).round_number as number;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const roundId = (round as any).id as string;
 
       // Filter stale DB change events: if this round is older than what we're tracking,
       // ignore it to prevent race conditions (e.g., old round's completeRound arriving
@@ -279,25 +292,35 @@ export default function GamePage() {
         return;
       }
 
-      // Update tracking ref if this is a newer round
+      // Update tracking refs if this is a newer round
       if (roundNum > currentRoundNumRef.current) {
         currentRoundNumRef.current = roundNum;
+        currentRoundIdRef.current = roundId;
       }
 
       setCurrentRound(round);
       setBuzzedIn(round.buzzed_in_player_id || null);
-      if (round.status === 'revealed') setPhase('revealed');
+
+      // Only set phase='revealed' if this is the current round (by ID match).
+      // This prevents a stale 'revealed' DB event from the previous round
+      // from accidentally showing the revealed phase while the player is
+      // already on the next round in 'playing' phase.
+      if (round.status === 'revealed' && (roundId === currentRoundIdRef.current || !currentRoundIdRef.current)) {
+        setPhase('revealed');
+      }
       if (round.status === 'completed') {
         // Only reset answer state if this completed round is the one we're currently on
         // (not a stale update for a round we've already moved past)
-        setHasSubmitted(false);
-        setSelectedOption(null);
-        setFreeText('');
-        setMyAnswer(null);
-        setStreakMsg('');
-        setWarningMsg('');
-        setBuzzedIn(null);
-        antiCheat.reset();
+        if (roundNum === currentRoundNumRef.current) {
+          setHasSubmitted(false);
+          setSelectedOption(null);
+          setFreeText('');
+          setMyAnswer(null);
+          setStreakMsg('');
+          setWarningMsg('');
+          setBuzzedIn(null);
+          antiCheat.reset();
+        }
       }
     }, [antiCheat]),
     subscribeToPlayers: false, // 玩家端不订阅玩家变更，避免 O(N²) 订阅风暴
