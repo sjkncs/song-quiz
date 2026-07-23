@@ -413,7 +413,7 @@ async function aiJudgeAnswer(
   // 统一的回退匹配函数（LLM 不可用时使用）
   const fallbackMatch = (): boolean => {
     const normalize = (s: string) =>
-      s.toLowerCase().replace(/[\s""''、，。,.!?！？：:;；\-\(\)（）\[\]【】]/g, '');
+      s.toLowerCase().replace(/[\s《》""''、，。,.!?！？：:;；\-\(\)（）\[\]【】]/g, '');
     const player = normalize(playerAnswer);
 
     // 从正确答案中提取关键词：
