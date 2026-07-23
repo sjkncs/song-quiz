@@ -135,6 +135,10 @@ export default function AdminRoomPage() {
       setError('没有可用的题目');
       return;
     }
+    if (players.length < 2) {
+      setError('至少需要2名玩家才能开始游戏');
+      return;
+    }
     setActionLoading(true);
     setError('');
     try {
@@ -496,8 +500,8 @@ export default function AdminRoomPage() {
               <h3 className="font-bold mb-4">流程控制</h3>
               <div className="flex gap-3 flex-wrap">
                 {room?.status === 'waiting' && (
-                  <button onClick={handleStartGame} disabled={actionLoading || players.length < 1} className="btn-success" style={{ width: 'auto', padding: '12px 24px' }}>
-                    {actionLoading ? '处理中...' : `开始游戏 (${players.length}人已加入)`}
+                  <button onClick={handleStartGame} disabled={actionLoading || players.length < 2} className="btn-success" style={{ width: 'auto', padding: '12px 24px' }}>
+                    {actionLoading ? '处理中...' : players.length < 2 ? `至少需要2名玩家（当前${players.length}人）` : `开始游戏 (${players.length}人已加入)`}
                   </button>
                 )}
                 {(room?.status === 'starting' || room?.status === 'playing') && (currentRound?.status === 'pending' || currentRound?.status === 'active' || currentRound?.status === 'revealed') && (
