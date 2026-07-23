@@ -740,6 +740,26 @@ export default function GamePage() {
           <p className="text-base leading-relaxed whitespace-pre-line">{q.question_text}</p>
         </div>
 
+        {/* 选项（始终显示，所有玩家可见） */}
+        {hasOptions && (
+          <div className={`space-y-2 mb-4 ${!buzzedIn || buzzedIn !== player?.id ? 'opacity-70' : ''}`}>
+            {q.options!.map((opt) => (
+              <button
+                key={opt.index}
+                onClick={() => {
+                  if (buzzedIn === player?.id && !hasSubmitted) setSelectedOption(opt.index);
+                }}
+                disabled={buzzedIn !== player?.id || hasSubmitted}
+                className={`option-btn ${selectedOption === opt.index ? 'selected' : ''} ${
+                  buzzedIn !== player?.id ? 'cursor-default' : ''
+                }`}
+              >
+                {opt.text}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* 抢答/答题区域 */}
         {!buzzedIn ? (
           <div className="text-center mb-6">
@@ -761,17 +781,7 @@ export default function GamePage() {
             </div>
             {!hasSubmitted ? (
               <>
-                {hasOptions ? (
-                  q.options!.map((opt) => (
-                    <button
-                      key={opt.index}
-                      onClick={() => setSelectedOption(opt.index)}
-                      className={`option-btn ${selectedOption === opt.index ? 'selected' : ''}`}
-                    >
-                      {opt.text}
-                    </button>
-                  ))
-                ) : (
+                {!hasOptions && (
                   <textarea
                     className="free-answer"
                     placeholder="输入你的答案..."
