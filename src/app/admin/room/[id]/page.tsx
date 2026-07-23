@@ -117,7 +117,7 @@ export default function AdminRoomPage() {
     }, [scheduleRefresh]),
     onBroadcast: useCallback((msg: GameBroadcast) => {
       if (msg.type === 'player_answer') {
-        scheduleRefresh({ answers: true, players: true });
+        scheduleRefresh({ answers: true, players: true, bonus: true });
       } else if (msg.type === 'round_complete') {
         scheduleRefresh({ answers: true, players: true, bonus: true });
       } else if (msg.type === 'buzz_in') {
@@ -646,6 +646,48 @@ export default function AdminRoomPage() {
                     ></div>
                   </div>
                 </div>
+                {/* 实时答题记录 */}
+                {answers.length > 0 && (
+                  <div className="mt-4">
+                    <h4 className="text-xs font-medium text-[var(--text-secondary)] mb-2">答题记录 ({answers.length})</h4>
+                    <div className="space-y-1.5 max-h-60 overflow-y-auto">
+                      {(answers as Array<{
+                        player_id: string;
+                        selected_option: number | null;
+                        selected_text: string | null;
+                        screen_switches: number;
+                        has_yellow_card: boolean;
+                        time_taken_ms: number;
+                        is_correct: boolean;
+                        submitted_at: string;
+                        player?: { nickname: string; group_label?: string };
+                      }>).map((a, i) => (
+                        <div key={i} className={`flex items-center gap-2 py-1.5 px-3 rounded-lg text-sm ${
+                          a.has_yellow_card ? 'bg-yellow-500/10 border border-yellow-500/20' : 'bg-[rgba(15,23,42,0.4)]'
+                        }`}>
+                          <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
+                            a.player?.group_label === 'A' ? 'bg-blue-500/20 text-blue-400' : 'bg-yellow-500/20 text-yellow-400'
+                          }`}>{a.player?.group_label || '?'}</span>
+                          <span className="flex-shrink-0 text-xs font-medium w-16 truncate">{a.player?.nickname || '未知'}</span>
+                          <span className="flex-1 min-w-0 text-xs text-[var(--text-secondary)] truncate" title={a.selected_text || ''}>
+                            {a.selected_text || (a.selected_option !== null && a.selected_option >= 0 ? `选项${String.fromCharCode(65 + a.selected_option)}` : '未作答')}
+                          </span>
+                          <span className="text-[10px] text-[var(--text-secondary)] flex-shrink-0 w-10 text-right">
+                            {a.time_taken_ms > 0 && a.time_taken_ms < 1000000 ? `${(a.time_taken_ms / 1000).toFixed(1)}s` : '-'}
+                          </span>
+                          {a.screen_switches > 0 && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400 flex-shrink-0">
+                              切{a.screen_switches}
+                            </span>
+                          )}
+                          <span className={`text-xs font-bold flex-shrink-0 w-8 text-right ${a.is_correct ? 'text-green-400' : 'text-red-400'}`}>
+                            {a.is_correct ? '✓' : '✗'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

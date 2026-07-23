@@ -427,15 +427,18 @@ async function aiJudgeAnswer(
     // 3. 字母选项本身也是有效答案 (如选"B")
     const letterMatch = correctAnswer.match(/^([A-D])/i);
     const letterKeywords = letterMatch ? [letterMatch[1].toLowerCase()] : [];
-    // 4. 合并去重
-    const allKeywords = [...new Set([...bracketMatches, ...slashKeywords, ...letterKeywords])].filter(Boolean);
+    // 4. 提取数字关键词（如 "第8集" → "8"，玩家回答"8"即可判对）
+    const numberMatches = [...ansBody.matchAll(/\d+/g)].map(m => m[0]);
+    // 5. 合并去重
+    const allKeywords = [...new Set([...bracketMatches, ...slashKeywords, ...letterKeywords, ...numberMatches])].filter(Boolean);
 
     // 如果没有提取到关键词，用去掉前缀后的答案
     const effectiveKeywords = allKeywords.length > 0 ? allKeywords : [normalize(ansBody)];
 
-    // 玩家答案中包含任一关键词即判对（关键词长度>=2避免单字误匹配，字母选项除外）
+    // 玩家答案中包含任一关键词即判对（关键词长度>=2避免单字误匹配，字母/数字选项除外）
     return effectiveKeywords.some(k => {
       if (k.length === 1 && /^[a-d]$/.test(k)) return player === k; // 字母精确匹配
+      if (/^\d+$/.test(k)) return player.includes(k); // 数字包含匹配
       return k.length >= 2 && player.includes(k);
     });
   };

@@ -189,11 +189,14 @@ async function aiJudgeAnswer(
     const slashKeywords = ansBody.split(/[\/|]/).map(k => normalize(k.replace(/[《》]/g, ''))).filter(Boolean);
     const letterMatch = correctAnswer.match(/^([A-D])/i);
     const letterKeywords = letterMatch ? [letterMatch[1].toLowerCase()] : [];
-    const allKeywords = [...new Set([...bracketMatches, ...slashKeywords, ...letterKeywords])].filter(Boolean);
+    // 提取数字关键词（如 "第8集" → "8"，玩家回答"8"即可判对）
+    const numberMatches = [...ansBody.matchAll(/\d+/g)].map(m => m[0]);
+    const allKeywords = [...new Set([...bracketMatches, ...slashKeywords, ...letterKeywords, ...numberMatches])].filter(Boolean);
     const effectiveKeywords = allKeywords.length > 0 ? allKeywords : [normalize(ansBody)];
 
     return effectiveKeywords.some(k => {
-      if (k.length === 1 && /^[a-d]$/.test(k)) return player === k;
+      if (k.length === 1 && /^[a-d]$/.test(k)) return player === k; // 字母精确匹配
+      if (/^\d+$/.test(k)) return player.includes(k); // 数字包含匹配
       return k.length >= 2 && player.includes(k);
     });
   };
