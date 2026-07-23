@@ -647,7 +647,9 @@ export async function submitAnswer(
   const question = roundFull.question;
   let isCorrect: boolean;
 
-  if (question.correct_index !== null && question.correct_index !== undefined) {
+  // Only use index-based matching when BOTH correct_index AND options exist
+  const hasOptions = question.options && question.options.length > 0;
+  if (question.correct_index !== null && question.correct_index !== undefined && hasOptions) {
     // 选择题：精确匹配选项索引（DB 可能返回字符串，需要 Number 转换）
     isCorrect = selectedOption === Number(question.correct_index);
   } else {
