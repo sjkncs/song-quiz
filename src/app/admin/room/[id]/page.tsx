@@ -480,7 +480,7 @@ export default function AdminRoomPage() {
                     {actionLoading ? '处理中...' : `开始游戏 (${players.length}人已加入)`}
                   </button>
                 )}
-                {(room?.status === 'starting' || room?.status === 'playing') && (currentRound?.status === 'pending' || currentRound?.status === 'active') && (
+                {(room?.status === 'starting' || room?.status === 'playing') && (currentRound?.status === 'pending' || currentRound?.status === 'active' || currentRound?.status === 'revealed') && (
                   <button onClick={handleStartTimer} disabled={actionLoading} className="btn-success" style={{ width: 'auto', padding: '12px 24px' }}>
                     ▶️ 开始计时
                   </button>
